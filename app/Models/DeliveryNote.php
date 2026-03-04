@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Str;
 
 class DeliveryNote extends Model
 {
@@ -34,12 +35,18 @@ class DeliveryNote extends Model
         'signature',
         'pdf_path',
         'pdf_generated_at',
+        'public_token',
+        'pin_verified',
+        'pin_verified_at',
+        'pin_verified_by',
     ];
 
     protected $casts = [
         'planned_date'     => 'date',
         'delivered_date'   => 'date',
         'pdf_generated_at' => 'datetime',
+        'pin_verified'     => 'boolean',
+        'pin_verified_at'  => 'datetime',
     ];
 
     protected static function boot(): void
@@ -49,6 +56,9 @@ class DeliveryNote extends Model
         static::creating(function (self $dn) {
             if (empty($dn->delivery_number)) {
                 $dn->delivery_number = static::generateNumber($dn->company_id);
+            }
+            if (empty($dn->public_token)) {
+                $dn->public_token = (string) Str::uuid();
             }
         });
     }
@@ -113,6 +123,12 @@ class DeliveryNote extends Model
     public function isInTransit(): bool  { return $this->status === 'in_transit'; }
     public function isDelivered(): bool  { return $this->status === 'delivered'; }
     public function isCancelled(): bool  { return $this->status === 'cancelled'; }
+    public function isPinVerified(): bool { return (bool) $this->pin_verified; }
+
+    public function getPublicUrlAttribute(): string
+    {
+        return route('delivery.public', $this->public_token);
+    }
 
     public function canBeEdited(): bool
     {

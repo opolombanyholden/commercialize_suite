@@ -110,6 +110,12 @@ class RolePermissionSeeder extends Seeder
             'taxes.view' => 'Voir les taxes',
             'taxes.manage' => 'Gérer les taxes',
 
+            // Promotions
+            'promotions.view' => 'Voir les promotions',
+            'promotions.create' => 'Créer des promotions',
+            'promotions.edit' => 'Modifier les promotions',
+            'promotions.delete' => 'Supprimer les promotions',
+
             // Rapports
             'reports.view' => 'Voir les rapports',
             'reports.export' => 'Exporter les rapports',
@@ -179,6 +185,7 @@ class RolePermissionSeeder extends Seeder
                     'inventory.*',
                     'ecommerce.view_orders', 'ecommerce.process_orders',
                     'taxes.view',
+                    'promotions.*',
                     'reports.view', 'reports.export',
                 ],
             ],
@@ -191,6 +198,7 @@ class RolePermissionSeeder extends Seeder
                     'payments.*',
                     'deliveries.view',
                     'taxes.view',
+                    'promotions.view',
                     'reports.view', 'reports.financial', 'reports.export',
                 ],
             ],
@@ -203,6 +211,7 @@ class RolePermissionSeeder extends Seeder
                     'invoices.*',
                     'payments.view',
                     'deliveries.*',
+                    'promotions.*',
                     'reports.view', 'reports.sales', 'reports.export',
                 ],
             ],
@@ -214,6 +223,7 @@ class RolePermissionSeeder extends Seeder
                     'quotes.*',
                     'invoices.view', 'invoices.create',
                     'deliveries.view',
+                    'promotions.view',
                 ],
             ],
             'warehouse_manager' => [

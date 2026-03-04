@@ -33,6 +33,11 @@ class Invoice extends Model
         'invoice_date',
         'due_date',
         'subtotal',
+        'discount_type',
+        'discount_value',
+        'discount_amount',
+        'promo_id',
+        'promo_code',
         'tax_amount',
         'total_amount',
         'paid_amount',
@@ -40,6 +45,8 @@ class Invoice extends Model
         'total_in_words',
         'notes',
         'terms',
+        'delivery_pin',
+        'delivery_pin_generated_at',
         'status',
         'payment_status',
         'pdf_path',
@@ -52,15 +59,18 @@ class Invoice extends Model
     protected $casts = [
         'invoice_date' => 'date',
         'due_date' => 'date',
-        'subtotal' => 'decimal:2',
-        'tax_amount' => 'decimal:2',
-        'total_amount' => 'decimal:2',
-        'paid_amount' => 'decimal:2',
-        'balance' => 'decimal:2',
-        'pdf_generated_at' => 'datetime',
-        'sent_at' => 'datetime',
-        'viewed_at' => 'datetime',
-        'paid_at' => 'datetime',
+        'subtotal'        => 'decimal:2',
+        'discount_value'  => 'decimal:2',
+        'discount_amount' => 'decimal:2',
+        'tax_amount'      => 'decimal:2',
+        'total_amount'    => 'decimal:2',
+        'paid_amount'     => 'decimal:2',
+        'balance'         => 'decimal:2',
+        'pdf_generated_at'          => 'datetime',
+        'sent_at'                   => 'datetime',
+        'viewed_at'                 => 'datetime',
+        'paid_at'                   => 'datetime',
+        'delivery_pin_generated_at' => 'datetime',
     ];
 
     /**
@@ -145,6 +155,11 @@ class Invoice extends Model
         return $this->hasMany(Invoice::class, 'original_invoice_id')->where('type', 'credit_note');
     }
 
+    public function promo(): BelongsTo
+    {
+        return $this->belongsTo(Promotion::class);
+    }
+
     /**
      * Retourne le résumé de l'avancement des livraisons pour cet invoice.
      * [total_dn, delivered, in_transit, pending, fully_delivered]
@@ -222,6 +237,25 @@ class Invoice extends Model
     public function isCreditNote(): bool
     {
         return $this->type === 'credit_note';
+    }
+
+    public function hasDeliveryPin(): bool
+    {
+        return !empty($this->delivery_pin);
+    }
+
+    /**
+     * Génère un PIN alphanumérique de 8 caractères sans ambiguïté visuelle (0/O/1/I/L exclus).
+     */
+    public static function generateDeliveryPin(): string
+    {
+        $chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+        $pin = '';
+        $max = strlen($chars) - 1;
+        for ($i = 0; $i < 8; $i++) {
+            $pin .= $chars[random_int(0, $max)];
+        }
+        return $pin;
     }
 
     /**
@@ -343,14 +377,34 @@ class Invoice extends Model
     public function calculateTotals(): void
     {
         $subtotal = $this->items()->sum('total');
-        $taxAmount = $this->taxes()->sum('tax_amount');
-        $totalAmount = $subtotal + $taxAmount;
+
+        // Remise globale
+        $disc = 0;
+        if ($this->discount_type === 'percent' && $this->discount_value > 0) {
+            $disc = round($subtotal * $this->discount_value / 100, 2);
+        } elseif ($this->discount_type === 'amount' && $this->discount_value > 0) {
+            $disc = min((float) $this->discount_value, $subtotal);
+        }
+        $netHT = max(0, $subtotal - $disc);
+        $ratio = $subtotal > 0 ? $netHT / $subtotal : 1;
+
+        // Recalculer taxes proportionnellement (saveQuietly pour éviter la boucle infinie avec InvoiceTax::saved)
+        $taxAmount = 0;
+        foreach ($this->taxes as $tax) {
+            $adjusted = round($tax->taxable_base * $ratio * $tax->tax_rate / 100, 2);
+            $tax->tax_amount = $adjusted;
+            $tax->saveQuietly();
+            $taxAmount += $adjusted;
+        }
+
+        $totalAmount = $netHT + $taxAmount;
 
         $this->update([
-            'subtotal' => $subtotal,
-            'tax_amount' => $taxAmount,
-            'total_amount' => $totalAmount,
-            'balance' => $totalAmount - $this->paid_amount,
+            'subtotal'        => $subtotal,
+            'discount_amount' => $disc,
+            'tax_amount'      => $taxAmount,
+            'total_amount'    => $totalAmount,
+            'balance'         => $totalAmount - $this->paid_amount,
         ]);
     }
 
@@ -413,28 +467,31 @@ class Invoice extends Model
      */
     public static function createFromQuote(Quote $quote): self
     {
+        $quote->loadMissing(['items', 'taxes']);
+
         $invoice = static::create([
-            'company_id' => $quote->company_id,
-            'site_id' => $quote->site_id,
-            'user_id' => auth()->id() ?? $quote->user_id,
-            'client_id' => $quote->client_id,
-            'quote_id' => $quote->id,
-            'client_name' => $quote->client_name,
-            'client_email' => $quote->client_email,
-            'client_phone' => $quote->client_phone,
-            'client_address' => $quote->client_address,
-            'client_city' => $quote->client_city,
-            'client_postal_code' => $quote->client_postal_code,
-            'invoice_date' => now(),
-            'due_date' => now()->addDays(30),
-            'subtotal' => $quote->subtotal,
-            'tax_amount' => $quote->tax_amount,
-            'total_amount' => $quote->total_amount,
-            'total_in_words' => $quote->total_in_words,
-            'notes' => $quote->notes,
-            'terms' => $quote->terms,
-            'status' => 'draft',
-            'payment_status' => 'unpaid',
+            'company_id'         => $quote->company_id,
+            'site_id'            => $quote->site_id,
+            'user_id'            => auth()->id() ?? $quote->user_id,
+            'client_id'          => $quote->client_id,
+            'quote_id'           => $quote->id,
+            'type'               => 'invoice',
+            'client_name'        => $quote->client_name,
+            'client_email'       => $quote->client_email,
+            'client_phone'       => $quote->client_phone,
+            'client_address'     => $quote->client_address,
+            'client_city'        => $quote->client_city ?? null,
+            'client_postal_code' => $quote->client_postal_code ?? null,
+            'invoice_date'       => now(),
+            'due_date'           => now()->addDays(30),
+            'subtotal'           => $quote->subtotal,
+            'tax_amount'         => $quote->tax_amount,
+            'total_amount'       => $quote->total_amount,
+            'total_in_words'     => $quote->total_in_words,
+            'notes'              => $quote->notes,
+            'terms'              => $quote->terms,
+            'status'             => 'draft',
+            'payment_status'     => 'unpaid',
         ]);
 
         // Copier les items

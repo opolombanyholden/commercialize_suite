@@ -18,15 +18,20 @@ class QuoteItem extends Model
         'type',
         'quantity',
         'unit_price',
+        'discount_type',
+        'discount_value',
+        'discount_amount',
         'total',
         'sort_order',
     ];
 
     protected $casts = [
-        'quantity' => 'decimal:3',
-        'unit_price' => 'decimal:2',
-        'total' => 'decimal:2',
-        'sort_order' => 'integer',
+        'quantity'        => 'decimal:3',
+        'unit_price'      => 'decimal:2',
+        'discount_value'  => 'decimal:2',
+        'discount_amount' => 'decimal:2',
+        'total'           => 'decimal:2',
+        'sort_order'      => 'integer',
     ];
 
     /**
@@ -37,8 +42,15 @@ class QuoteItem extends Model
         parent::boot();
 
         static::saving(function ($item) {
-            // Calculer automatiquement le total
-            $item->total = round($item->quantity * $item->unit_price, 2);
+            $gross = round($item->quantity * $item->unit_price, 2);
+            $disc  = 0;
+            if ($item->discount_type === 'percent' && $item->discount_value > 0) {
+                $disc = round($gross * $item->discount_value / 100, 2);
+            } elseif ($item->discount_type === 'amount' && $item->discount_value > 0) {
+                $disc = min((float) $item->discount_value, $gross);
+            }
+            $item->discount_amount = $disc;
+            $item->total           = round($gross - $disc, 2);
         });
 
         static::saved(function ($item) {

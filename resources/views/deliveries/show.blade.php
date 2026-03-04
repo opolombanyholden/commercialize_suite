@@ -147,6 +147,24 @@
             </div>
         </div>
 
+        {{-- Confirmation PIN (si déjà vérifié) --}}
+        @if($delivery->isPinVerified())
+        <div class="card border-0 shadow-sm mb-4 border-start border-success border-4">
+            <div class="card-body d-flex align-items-center gap-3">
+                <div class="rounded-circle bg-success bg-opacity-10 p-3 flex-shrink-0">
+                    <i class="fas fa-check-circle text-success fs-4"></i>
+                </div>
+                <div>
+                    <div class="fw-semibold text-success">Livraison confirmée par PIN</div>
+                    <div class="small text-muted">
+                        Confirmé par {{ $delivery->pin_verified_by === 'client' ? 'le client' : 'le livreur' }}
+                        le {{ $delivery->pin_verified_at->format('d/m/Y à H:i') }}
+                    </div>
+                </div>
+            </div>
+        </div>
+        @endif
+
         {{-- Signature --}}
         @if($delivery->isDelivered() && $delivery->signature)
         <div class="card border-0 shadow-sm mb-4">
@@ -158,8 +176,41 @@
             </div>
         </div>
         @elseif(!$delivery->isDelivered() && !$delivery->isCancelled())
-        {{-- Capture signature --}}
         @can('deliveries.edit')
+
+        {{-- Vérification par PIN (livreur) --}}
+        @if($delivery->invoice?->hasDeliveryPin())
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-transparent">
+                <h6 class="card-title mb-0"><i class="fas fa-key me-2 text-warning"></i>Valider par code PIN</h6>
+            </div>
+            <div class="card-body">
+                <p class="text-muted small mb-3">Saisissez le code que le client vous communique (visible sur sa facture).</p>
+                <form action="{{ route('deliveries.verifyPin', $delivery) }}" method="POST">
+                    @csrf
+                    <div class="mb-2">
+                        <input type="text" name="pin"
+                            class="form-control text-center @error('pin') is-invalid @enderror"
+                            placeholder="XXXXXXXX"
+                            maxlength="8"
+                            style="letter-spacing:.3em; font-size:1.2rem; font-family:monospace; text-transform:uppercase;"
+                            autocomplete="off">
+                        @error('pin')
+                            <div class="invalid-feedback">{{ $message }}</div>
+                        @enderror
+                    </div>
+                    <button type="submit" class="btn btn-warning w-100">
+                        <i class="fas fa-check me-2"></i>Valider la livraison
+                    </button>
+                </form>
+                <div class="text-center mt-2">
+                    <small class="text-muted">— ou —</small>
+                </div>
+            </div>
+        </div>
+        @endif
+
+        {{-- Capture signature --}}
         <div class="card border-0 shadow-sm mb-4">
             <div class="card-header bg-transparent">
                 <h6 class="card-title mb-0"><i class="fas fa-pen me-2 text-primary"></i>Signature de réception</h6>

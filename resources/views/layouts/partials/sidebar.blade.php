@@ -168,10 +168,28 @@
             @endcan
             
             {{-- Administration Section --}}
-            @canany(['users.view', 'roles.view', 'taxes.view', 'settings.view'])
+            @canany(['sites.view', 'users.view', 'roles.view', 'taxes.view', 'settings.view', 'promotions.view'])
             <li class="nav-header">Administration</li>
             @endcanany
-            
+
+            @can('sites.view')
+            <li class="nav-item">
+                <a href="{{ route('admin.sites.index') }}" class="nav-link {{ request()->routeIs('admin.sites.*') ? 'active' : '' }}">
+                    <i class="fas fa-map-marker-alt nav-icon"></i>
+                    <span>Sites</span>
+                </a>
+            </li>
+            @endcan
+
+            @can('promotions.view')
+            <li class="nav-item">
+                <a href="{{ route('promotions.index') }}" class="nav-link {{ request()->routeIs('promotions.*') ? 'active' : '' }}">
+                    <i class="fas fa-tag nav-icon"></i>
+                    <span>Promotions</span>
+                </a>
+            </li>
+            @endcan
+
             @can('users.view')
             <li class="nav-item">
                 <a href="{{ route('admin.users.index') }}" class="nav-link {{ request()->routeIs('admin.users.*') ? 'active' : '' }}">

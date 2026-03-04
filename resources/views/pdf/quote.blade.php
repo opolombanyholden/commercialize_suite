@@ -339,14 +339,18 @@
     </div>
 
     {{-- Items Table --}}
+    @php $hasLineDisc = $quote->items->where('discount_amount', '>', 0)->isNotEmpty(); @endphp
     <table class="items">
         <thead>
             <tr>
                 <th style="width: 5%;">#</th>
-                <th style="width: 40%;">Description</th>
-                <th class="center" style="width: 12%;">Type</th>
-                <th class="center" style="width: 10%;">Qté</th>
-                <th class="right" style="width: 15%;">P.U. HT</th>
+                <th style="width: {{ $hasLineDisc ? '33%' : '40%' }};">Description</th>
+                <th class="center" style="width: 10%;">Type</th>
+                <th class="center" style="width: 8%;">Qté</th>
+                <th class="right" style="width: 12%;">P.U. HT</th>
+                @if($hasLineDisc)
+                <th class="right" style="width: 14%;">Remise</th>
+                @endif
                 <th class="right" style="width: 18%;">Total HT</th>
             </tr>
         </thead>
@@ -362,6 +366,15 @@
                 </td>
                 <td class="center">{{ number_format($item->quantity, 2, ',', ' ') }}</td>
                 <td class="right">{{ number_format($item->unit_price, 0, ',', ' ') }}</td>
+                @if($hasLineDisc)
+                <td class="right" style="color:#c62828;">
+                    @if($item->discount_amount > 0)
+                        −{{ number_format($item->discount_amount, 0, ',', ' ') }}
+                    @else
+                        —
+                    @endif
+                </td>
+                @endif
                 <td class="right"><strong>{{ number_format($item->total, 0, ',', ' ') }}</strong></td>
             </tr>
             @endforeach
@@ -374,6 +387,20 @@
             <div class="totals-label">Sous-total HT</div>
             <div class="totals-value">{{ number_format($quote->subtotal, 0, ',', ' ') }} FCFA</div>
         </div>
+        @if($quote->discount_amount > 0)
+        <div class="totals-row">
+            <div class="totals-label">
+                Remise
+                @if($quote->promo_code) ({{ $quote->promo_code }})@endif
+                @if($quote->discount_type === 'percent') ({{ $quote->discount_value }}%)@endif
+            </div>
+            <div class="totals-value" style="color:#c62828;">−{{ number_format($quote->discount_amount, 0, ',', ' ') }} FCFA</div>
+        </div>
+        <div class="totals-row">
+            <div class="totals-label">Net HT</div>
+            <div class="totals-value">{{ number_format($quote->subtotal - $quote->discount_amount, 0, ',', ' ') }} FCFA</div>
+        </div>
+        @endif
         @foreach($quote->taxes as $tax)
         <div class="totals-row">
             <div class="totals-label">{{ $tax->tax_name }} ({{ $tax->tax_rate }}%)</div>

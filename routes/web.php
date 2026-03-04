@@ -6,6 +6,7 @@ use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\Admin\CompanyController;
 use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\SiteController;
+use App\Http\Controllers\Admin\PromotionController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Clients\ClientController;
 use App\Http\Controllers\Dashboard\DashboardController;
@@ -17,6 +18,7 @@ use App\Http\Controllers\Payments\PaymentController;
 use App\Http\Controllers\Products\CategoryController;
 use App\Http\Controllers\Products\ProductController;
 use App\Http\Controllers\Settings\TaxController;
+use App\Http\Controllers\Public\PublicDeliveryController;
 use App\Http\Controllers\Inventory\InventoryDashboardController;
 use App\Http\Controllers\Inventory\WarehouseController;
 use App\Http\Controllers\Inventory\StockMovementController;
@@ -32,6 +34,12 @@ use Illuminate\Support\Facades\Route;
 // ============================================
 // ROUTES PUBLIQUES (non authentifiées)
 // ============================================
+
+// Bon de livraison public (QR code)
+Route::get('/bl/{token}', [PublicDeliveryController::class, 'show'])->name('delivery.public');
+Route::post('/bl/{token}/verify', [PublicDeliveryController::class, 'verify'])
+    ->middleware('throttle:5,60')
+    ->name('delivery.public.verify');
 
 Route::get('/', function () {
     return auth()->check() 
@@ -110,6 +118,10 @@ Route::middleware(['auth'])->group(function () {
         Route::get('roles/{role}', [RoleController::class, 'show'])->name('roles.show');
     });
 
+    // Promotions (accessible à tous les utilisateurs authentifiés avec permissions)
+    Route::get('promotions/apply', [PromotionController::class, 'apply'])->name('promotions.apply');
+    Route::resource('promotions', PromotionController::class)->except(['show']);
+
     // Paramètres entreprise (pour l'utilisateur courant)
     Route::get('settings/company', [CompanyController::class, 'settings'])->name('settings.company');
     Route::put('settings/company', [CompanyController::class, 'updateSettings'])->name('settings.company.update');
@@ -169,6 +181,7 @@ Route::middleware(['auth'])->group(function () {
     Route::post('invoices/{invoice}/cancel', [InvoiceController::class, 'cancel'])->name('invoices.cancel');
     Route::post('invoices/{invoice}/duplicate', [InvoiceController::class, 'duplicate'])->name('invoices.duplicate');
     Route::patch('invoices/{invoice}/status', [InvoiceController::class, 'updateStatus'])->name('invoices.updateStatus');
+    Route::post('invoices/{invoice}/generate-pin', [InvoiceController::class, 'generatePin'])->name('invoices.generatePin');
 
     // ----------------------------------------
     // BONS DE LIVRAISON
@@ -177,6 +190,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('deliveries/{delivery}/pdf', [DeliveryNoteController::class, 'pdf'])->name('deliveries.pdf');
     Route::patch('deliveries/{delivery}/status', [DeliveryNoteController::class, 'updateStatus'])->name('deliveries.updateStatus');
     Route::post('deliveries/{delivery}/signature', [DeliveryNoteController::class, 'saveSignature'])->name('deliveries.signature');
+    Route::post('deliveries/{delivery}/verify-pin', [DeliveryNoteController::class, 'verifyPin'])->name('deliveries.verifyPin');
     Route::post('invoices/{invoice}/delivery', [DeliveryNoteController::class, 'createFromInvoice'])->name('deliveries.createFromInvoice');
 
     // ----------------------------------------

@@ -185,6 +185,12 @@ class CompanyController extends Controller
         $company = $request->user()->company;
         $data = $request->validated();
 
+        // Supprimer le logo existant si demandé
+        if ($request->boolean('remove_logo') && $company->logo_path) {
+            Storage::disk('public')->delete($company->logo_path);
+            $data['logo_path'] = null;
+        }
+
         // Upload logo
         if ($request->hasFile('logo')) {
             if ($company->logo_path) {
@@ -192,6 +198,9 @@ class CompanyController extends Controller
             }
             $data['logo_path'] = $request->file('logo')->store('logos', 'public');
         }
+
+        // Supprimer les champs non-colonnes avant mise à jour
+        unset($data['logo'], $data['remove_logo']);
 
         $company->update($data);
 

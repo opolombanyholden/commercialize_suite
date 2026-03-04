@@ -483,7 +483,7 @@
 
         {{-- Notes --}}
         @if($invoice->notes)
-        <div class="card border-0 shadow-sm">
+        <div class="card border-0 shadow-sm mb-4">
             <div class="card-header bg-transparent">
                 <h6 class="card-title mb-0"><i class="fas fa-sticky-note me-2"></i>Notes</h6>
             </div>
@@ -491,6 +491,58 @@
                 <p class="mb-0 text-muted">{!! nl2br(e($invoice->notes)) !!}</p>
             </div>
         </div>
+        @endif
+
+        {{-- Code de livraison (PIN) --}}
+        @if($invoice->status !== 'cancelled')
+        @can('invoices.edit')
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-transparent d-flex justify-content-between align-items-center">
+                <h6 class="card-title mb-0"><i class="fas fa-key me-2 text-warning"></i>Code de livraison</h6>
+            </div>
+            <div class="card-body">
+                {{-- Flash : PIN affiché une seule fois après génération --}}
+                @if(session('pin_generated'))
+                <div class="alert alert-success alert-dismissible mb-3 py-2">
+                    <button type="button" class="btn-close btn-sm" data-bs-dismiss="alert"></button>
+                    <div class="small text-muted mb-1">Code généré — notez-le :</div>
+                    <div class="fs-4 fw-bold letter-spacing-lg text-center" style="letter-spacing:.3em; font-family:monospace;">
+                        {{ session('pin_generated') }}
+                    </div>
+                    <div class="small text-muted mt-1">Visible sur le PDF de la facture.</div>
+                </div>
+                @endif
+
+                @if($invoice->hasDeliveryPin())
+                    <div class="text-center mb-2">
+                        <div class="fs-5 fw-bold text-muted" style="letter-spacing:.25em; font-family:monospace;">
+                            &#x25CF;&#x25CF;&#x25CF;&#x25CF;&#x25CF;&#x25CF;&#x25CF;&#x25CF;
+                        </div>
+                        <div class="small text-muted mt-1">
+                            <i class="fas fa-check-circle text-success me-1"></i>
+                            Généré le {{ $invoice->delivery_pin_generated_at?->format('d/m/Y') }}
+                        </div>
+                        <div class="small text-muted">Affiché sur le PDF de la facture.</div>
+                    </div>
+                    <form action="{{ route('invoices.generatePin', $invoice) }}" method="POST"
+                          onsubmit="return confirm('Regénérer un nouveau code ? L\'ancien ne sera plus valide.')">
+                        @csrf
+                        <button type="submit" class="btn btn-sm btn-outline-warning w-100">
+                            <i class="fas fa-sync-alt me-1"></i>Regénérer le code
+                        </button>
+                    </form>
+                @else
+                    <p class="text-muted small mb-3">Générez un code confidentiel à communiquer au client. Ce code permettra de confirmer la livraison sans signature.</p>
+                    <form action="{{ route('invoices.generatePin', $invoice) }}" method="POST">
+                        @csrf
+                        <button type="submit" class="btn btn-warning w-100">
+                            <i class="fas fa-key me-2"></i>Générer le code
+                        </button>
+                    </form>
+                @endif
+            </div>
+        </div>
+        @endcan
         @endif
     </div>
 </div>

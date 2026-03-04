@@ -173,21 +173,28 @@
                     
                     @if(!$quote->converted_to_invoice_id && $quote->status !== 'rejected')
                         @can('quotes.convert')
-                        <a href="{{ route('quotes.convert', $quote) }}" class="btn btn-success" onclick="return confirm('Convertir ce devis en facture ?')">
-                            <i class="fas fa-file-invoice me-2"></i>Convertir en facture
-                        </a>
+                        <form action="{{ route('quotes.convert', $quote) }}" method="POST"
+                              onsubmit="return confirm('Convertir ce devis en facture ?')">
+                            @csrf
+                            <button type="submit" class="btn btn-success w-100">
+                                <i class="fas fa-file-invoice me-2"></i>Convertir en facture
+                            </button>
+                        </form>
                         @endcan
-                        
+
                         @can('quotes.edit')
                         <a href="{{ route('quotes.edit', $quote) }}" class="btn btn-outline-secondary">
                             <i class="fas fa-edit me-2"></i>Modifier
                         </a>
                         @endcan
                     @endif
-                    
-                    <a href="{{ route('quotes.duplicate', $quote) }}" class="btn btn-outline-secondary">
-                        <i class="fas fa-copy me-2"></i>Dupliquer
-                    </a>
+
+                    <form action="{{ route('quotes.duplicate', $quote) }}" method="POST">
+                        @csrf
+                        <button type="submit" class="btn btn-outline-secondary w-100">
+                            <i class="fas fa-copy me-2"></i>Dupliquer
+                        </button>
+                    </form>
                     
                     @can('quotes.delete')
                     <form action="{{ route('quotes.destroy', $quote) }}" method="POST" onsubmit="return confirm('Supprimer ce devis ?')">

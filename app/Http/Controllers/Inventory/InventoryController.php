@@ -22,22 +22,38 @@ class InventoryController extends Controller
 
     public function index(Request $request): View
     {
-        $companyId = $request->user()->company_id;
+        $user      = $request->user();
+        $companyId = $user->company_id;
 
-        $inventories = Inventory::where('company_id', $companyId)
+        $query = Inventory::where('company_id', $companyId)
             ->with(['site', 'user'])
-            ->withCount('lines')
-            ->latest('date')
-            ->paginate(15)
-            ->withQueryString();
+            ->withCount('lines');
+
+        // Un entrepôt peut ne pas être rattaché à un site : on filtre uniquement
+        // si l'utilisateur n'a pas accès global ET que des sites lui sont attribués.
+        if (!$user->hasAccessToAllSites()) {
+            $siteIds = $user->getSiteIds();
+            // Inclure les inventaires rattachés aux sites accessibles OU sans site
+            $query->where(function ($q) use ($siteIds) {
+                $q->whereIn('site_id', $siteIds)->orWhereNull('site_id');
+            });
+        }
+
+        $inventories = $query->latest('date')->paginate(15)->withQueryString();
 
         return view('inventory.sessions.index', compact('inventories'));
     }
 
     public function create(Request $request): View
     {
-        $companyId  = $request->user()->company_id;
-        $warehouses = Site::where('company_id', $companyId)->where('is_warehouse', true)->active()->orderBy('name')->get();
+        $user      = $request->user();
+        $companyId = $user->company_id;
+
+        $warehousesQuery = Site::where('company_id', $companyId)->where('is_warehouse', true)->active()->orderBy('name');
+        if (!$user->hasAccessToAllSites()) {
+            $warehousesQuery->whereIn('id', $user->getSiteIds());
+        }
+        $warehouses = $warehousesQuery->get();
 
         return view('inventory.sessions.create', compact('warehouses'));
     }
@@ -51,14 +67,18 @@ class InventoryController extends Controller
             'notes'   => ['nullable', 'string'],
         ]);
 
-        $companyId = $request->user()->company_id;
+        $user      = $request->user();
+        $companyId = $user->company_id;
+
+        // Par défaut, rattacher au site principal de l'utilisateur si aucun site choisi
+        $siteId = $data['site_id'] ?? $user->getPrimarySite()?->id;
 
         $inventory = Inventory::create([
             'company_id' => $companyId,
-            'user_id'    => $request->user()->id,
+            'user_id'    => $user->id,
             'name'       => $data['name'],
             'date'       => $data['date'],
-            'site_id'    => $data['site_id'] ?? null,
+            'site_id'    => $siteId,
             'status'     => 'in_progress',
             'notes'      => $data['notes'] ?? null,
         ]);

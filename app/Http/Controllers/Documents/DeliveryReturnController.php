@@ -7,6 +7,7 @@ use App\Models\DeliveryNote;
 use App\Models\DeliveryReturn;
 use App\Models\Invoice;
 use App\Models\InvoiceTax;
+use App\Models\Site;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -27,10 +28,16 @@ class DeliveryReturnController extends Controller
      */
     public function index(Request $request): View
     {
-        $companyId = $request->user()->company_id;
+        $user      = $request->user();
+        $companyId = $user->company_id;
 
         $query = DeliveryReturn::where('company_id', $companyId)
             ->with(['invoice', 'deliveryNote', 'client']);
+
+        // Filtrage par site pour les utilisateurs non-admins
+        if (!$user->hasAccessToAllSites()) {
+            $query->whereIn('site_id', $user->getSiteIds());
+        }
 
         if ($search = $request->input('search')) {
             $query->where(function ($q) use ($search) {
@@ -45,11 +52,16 @@ class DeliveryReturnController extends Controller
 
         $returns = $query->latest()->paginate(15)->withQueryString();
 
+        // Stats scoped au même périmètre de sites
+        $statsQuery = DeliveryReturn::where('company_id', $companyId);
+        if (!$user->hasAccessToAllSites()) {
+            $statsQuery->whereIn('site_id', $user->getSiteIds());
+        }
         $stats = [
-            'pending'  => DeliveryReturn::where('company_id', $companyId)->where('status', 'pending')->count(),
-            'received' => DeliveryReturn::where('company_id', $companyId)->where('status', 'received')->count(),
-            'resolved' => DeliveryReturn::where('company_id', $companyId)->where('status', 'resolved')->count(),
-            'total'    => DeliveryReturn::where('company_id', $companyId)->count(),
+            'pending'  => (clone $statsQuery)->where('status', 'pending')->count(),
+            'received' => (clone $statsQuery)->where('status', 'received')->count(),
+            'resolved' => (clone $statsQuery)->where('status', 'resolved')->count(),
+            'total'    => (clone $statsQuery)->count(),
         ];
 
         return view('returns.index', compact('returns', 'stats'));
@@ -149,6 +161,7 @@ class DeliveryReturnController extends Controller
 
             $ret = DeliveryReturn::create([
                 'company_id'       => $user->company_id,
+                'site_id'          => $invoice->site_id ?? $user->getPrimarySite()?->id,
                 'user_id'          => $user->id,
                 'invoice_id'       => $invoice->id,
                 'delivery_note_id' => $deliveryNoteId,
@@ -233,6 +246,7 @@ class DeliveryReturnController extends Controller
                 // Créer un nouveau BL avec les items retournés
                 $dn = DeliveryNote::create([
                     'company_id'       => $return->company_id,
+                    'site_id'          => $return->site_id,
                     'user_id'          => $request->user()->id,
                     'invoice_id'       => $invoice->id,
                     'client_id'        => $invoice->client_id,

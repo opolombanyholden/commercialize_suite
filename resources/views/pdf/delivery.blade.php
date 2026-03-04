@@ -178,6 +178,13 @@
     @endif
 
     {{-- Signatures --}}
+    @php
+        $hasPin = $delivery->invoice?->hasDeliveryPin();
+        $qrSvgDelivery = null;
+        if ($hasPin || $delivery->public_token) {
+            $qrSvgDelivery = \SimpleSoftwareIO\QrCode\Facades\QrCode::format('svg')->size(90)->margin(1)->generate(route('delivery.public', $delivery->public_token));
+        }
+    @endphp
     <div class="signature-section">
         <div class="sig-box">
             <div class="sig-label">Signature du livreur</div>
@@ -185,12 +192,29 @@
             <div class="sig-name">{{ $delivery->livreur ?? '____________________' }}</div>
         </div>
         <div class="sig-box" style="margin-left:4%;">
-            <div class="sig-label">Signature du destinataire</div>
-            @if($delivery->signature)
-                <img src="{{ $delivery->signature }}" class="sig-image" alt="Signature">
+            @if($delivery->isPinVerified())
+                <div class="sig-label">Réception confirmée par PIN</div>
+                <div style="text-align:center; padding:10px 0; color:#065F46;">
+                    <div style="font-size:20pt;">✓</div>
+                    <div style="font-size:9pt; margin-top:4px;">
+                        Confirmé par {{ $delivery->pin_verified_by === 'client' ? 'le client' : 'le livreur' }}<br>
+                        le {{ $delivery->pin_verified_at->format('d/m/Y à H:i') }}
+                    </div>
+                </div>
+            @elseif($qrSvgDelivery)
+                <div class="sig-label">Scanner pour confirmer la réception</div>
+                <div style="text-align:center; padding:4px 0;">
+                    {!! $qrSvgDelivery !!}
+                    <div style="font-size:8pt; color:#6B7280; margin-top:4px;">Ou saisissez le PIN via le livreur</div>
+                </div>
             @else
-                <div class="sig-area"></div>
-                <div class="sig-name">{{ $delivery->client_name }}</div>
+                <div class="sig-label">Signature du destinataire</div>
+                @if($delivery->signature)
+                    <img src="{{ $delivery->signature }}" class="sig-image" alt="Signature">
+                @else
+                    <div class="sig-area"></div>
+                    <div class="sig-name">{{ $delivery->client_name }}</div>
+                @endif
             @endif
         </div>
     </div>

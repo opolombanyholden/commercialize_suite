@@ -29,6 +29,11 @@ class Quote extends Model
         'quote_date',
         'valid_until',
         'subtotal',
+        'discount_type',
+        'discount_value',
+        'discount_amount',
+        'promo_id',
+        'promo_code',
         'tax_amount',
         'total_amount',
         'total_in_words',
@@ -44,11 +49,13 @@ class Quote extends Model
     ];
 
     protected $casts = [
-        'quote_date' => 'date',
-        'valid_until' => 'date',
-        'subtotal' => 'decimal:2',
-        'tax_amount' => 'decimal:2',
-        'total_amount' => 'decimal:2',
+        'quote_date'      => 'date',
+        'valid_until'     => 'date',
+        'subtotal'        => 'decimal:2',
+        'discount_value'  => 'decimal:2',
+        'discount_amount' => 'decimal:2',
+        'tax_amount'      => 'decimal:2',
+        'total_amount'    => 'decimal:2',
         'converted_at' => 'datetime',
         'pdf_generated_at' => 'datetime',
         'sent_at' => 'datetime',
@@ -120,6 +127,11 @@ class Quote extends Model
     public function convertedInvoice(): BelongsTo
     {
         return $this->belongsTo(Invoice::class, 'converted_to_invoice_id');
+    }
+
+    public function promo(): BelongsTo
+    {
+        return $this->belongsTo(Promotion::class);
     }
 
     // ===== SCOPES =====
@@ -243,12 +255,31 @@ class Quote extends Model
     public function calculateTotals(): void
     {
         $subtotal = $this->items()->sum('total');
-        $taxAmount = $this->taxes()->sum('tax_amount');
+
+        // Remise globale
+        $disc = 0;
+        if ($this->discount_type === 'percent' && $this->discount_value > 0) {
+            $disc = round($subtotal * $this->discount_value / 100, 2);
+        } elseif ($this->discount_type === 'amount' && $this->discount_value > 0) {
+            $disc = min((float) $this->discount_value, $subtotal);
+        }
+        $netHT = max(0, $subtotal - $disc);
+        $ratio = $subtotal > 0 ? $netHT / $subtotal : 1;
+
+        // Recalculer taxes proportionnellement (saveQuietly pour éviter la boucle infinie avec QuoteTax::saved)
+        $taxAmount = 0;
+        foreach ($this->taxes as $tax) {
+            $adjusted = round($tax->taxable_base * $ratio * $tax->tax_rate / 100, 2);
+            $tax->tax_amount = $adjusted;
+            $tax->saveQuietly();
+            $taxAmount += $adjusted;
+        }
 
         $this->update([
-            'subtotal' => $subtotal,
-            'tax_amount' => $taxAmount,
-            'total_amount' => $subtotal + $taxAmount,
+            'subtotal'        => $subtotal,
+            'discount_amount' => $disc,
+            'tax_amount'      => $taxAmount,
+            'total_amount'    => $netHT + $taxAmount,
         ]);
     }
 

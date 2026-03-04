@@ -104,6 +104,11 @@ class Site extends Model
         return $query->where('is_store', true);
     }
 
+    public function scopeOrdered($query)
+    {
+        return $query->orderByDesc('is_headquarters')->orderBy('name');
+    }
+
     // ===== HELPERS =====
 
     public function getFullAddressAttribute(): string

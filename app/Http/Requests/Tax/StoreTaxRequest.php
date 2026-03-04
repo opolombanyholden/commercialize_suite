@@ -15,7 +15,7 @@ class StoreTaxRequest extends FormRequest
     {
         return [
             'name' => ['required', 'string', 'max:100'],
-            'rate' => ['required', 'numeric', 'min:0', 'max:100'],
+            'rate' => ['required', 'numeric', 'min:-100', 'max:100'],
             'description' => ['nullable', 'string', 'max:500'],
             'apply_to' => ['required', 'in:all,products,services'],
             'is_default' => ['boolean'],

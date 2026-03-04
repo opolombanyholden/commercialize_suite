@@ -20,7 +20,7 @@ class DeliveryNoteController extends Controller
     {
         $this->middleware('permission:deliveries.view')->only(['index', 'show']);
         $this->middleware('permission:deliveries.create')->only(['create', 'store', 'createFromInvoice']);
-        $this->middleware('permission:deliveries.edit')->only(['edit', 'update', 'updateStatus', 'saveSignature']);
+        $this->middleware('permission:deliveries.edit')->only(['edit', 'update', 'updateStatus', 'saveSignature', 'verifyPin']);
         $this->middleware('permission:deliveries.delete')->only('destroy');
     }
 
@@ -29,10 +29,16 @@ class DeliveryNoteController extends Controller
      */
     public function index(Request $request): View
     {
-        $companyId = $request->user()->company_id;
+        $user      = $request->user();
+        $companyId = $user->company_id;
 
         $query = DeliveryNote::where('company_id', $companyId)
             ->with(['client', 'invoice']);
+
+        // Filtrage par site pour les utilisateurs non-admins
+        if (!$user->hasAccessToAllSites()) {
+            $query->whereIn('site_id', $user->getSiteIds());
+        }
 
         if ($search = $request->input('search')) {
             $query->where(function ($q) use ($search) {
@@ -54,11 +60,15 @@ class DeliveryNoteController extends Controller
 
         $deliveries = $query->latest('planned_date')->paginate(15)->withQueryString();
 
+        $statsQuery = DeliveryNote::where('company_id', $companyId);
+        if (!$user->hasAccessToAllSites()) {
+            $statsQuery->whereIn('site_id', $user->getSiteIds());
+        }
         $stats = [
-            'pending'    => DeliveryNote::where('company_id', $companyId)->where('status', 'pending')->count(),
-            'in_transit' => DeliveryNote::where('company_id', $companyId)->where('status', 'in_transit')->count(),
-            'delivered'  => DeliveryNote::where('company_id', $companyId)->where('status', 'delivered')->count(),
-            'total'      => DeliveryNote::where('company_id', $companyId)->count(),
+            'pending'    => (clone $statsQuery)->where('status', 'pending')->count(),
+            'in_transit' => (clone $statsQuery)->where('status', 'in_transit')->count(),
+            'delivered'  => (clone $statsQuery)->where('status', 'delivered')->count(),
+            'total'      => (clone $statsQuery)->count(),
         ];
 
         return view('deliveries.index', compact('deliveries', 'stats'));
@@ -69,11 +79,16 @@ class DeliveryNoteController extends Controller
      */
     public function create(Request $request): View
     {
-        $companyId = $request->user()->company_id;
+        $user      = $request->user();
+        $companyId = $user->company_id;
 
         $clients  = Client::where('company_id', $companyId)->where('is_active', true)->orderBy('name')->get();
         $products = Product::where('company_id', $companyId)->where('is_active', true)->orderBy('name')->get();
-        $sites    = Site::where('company_id', $companyId)->where('is_active', true)->get();
+        $sitesQuery = Site::where('company_id', $companyId)->where('is_active', true);
+        if (!$user->hasAccessToAllSites()) {
+            $sitesQuery->whereIn('id', $user->getSiteIds());
+        }
+        $sites = $sitesQuery->ordered()->get();
 
         $selectedClient  = null;
         $fromInvoice     = null;
@@ -227,10 +242,15 @@ class DeliveryNoteController extends Controller
                 ->with('error', 'Un bon de livraison livré ne peut plus être modifié.');
         }
 
-        $companyId = $request->user()->company_id;
+        $user      = $request->user();
+        $companyId = $user->company_id;
         $clients   = Client::where('company_id', $companyId)->where('is_active', true)->orderBy('name')->get();
         $products  = Product::where('company_id', $companyId)->where('is_active', true)->orderBy('name')->get();
-        $sites     = Site::where('company_id', $companyId)->where('is_active', true)->get();
+        $sitesQuery = Site::where('company_id', $companyId)->where('is_active', true);
+        if (!$user->hasAccessToAllSites()) {
+            $sitesQuery->whereIn('id', $user->getSiteIds());
+        }
+        $sites = $sitesQuery->ordered()->get();
 
         $delivery->load(['items.product', 'invoice.items']);
 
@@ -400,6 +420,36 @@ class DeliveryNoteController extends Controller
             ['delivery' => $delivery, 'company' => $delivery->company],
             'bon-livraison-' . $delivery->delivery_number . '.pdf'
         );
+    }
+
+    /**
+     * Vérifier le PIN de livraison (saisi par le livreur)
+     */
+    public function verifyPin(Request $request, DeliveryNote $delivery): RedirectResponse
+    {
+        $this->authorizeCompany($request, $delivery);
+
+        $request->validate(['pin' => ['required', 'string']]);
+
+        $delivery->loadMissing('invoice');
+
+        if (!$delivery->invoice || !$delivery->invoice->hasDeliveryPin()) {
+            return back()->with('error', 'Cette facture n\'a pas de code PIN de livraison.');
+        }
+
+        if (strtoupper(trim($request->pin)) !== $delivery->invoice->delivery_pin) {
+            return back()->withErrors(['pin' => 'Code incorrect. Veuillez réessayer.']);
+        }
+
+        $delivery->update([
+            'pin_verified'    => true,
+            'pin_verified_at' => now(),
+            'pin_verified_by' => 'livreur',
+            'status'          => 'delivered',
+            'delivered_date'  => today(),
+        ]);
+
+        return back()->with('success', 'PIN correct. Bon de livraison marqué comme livré.');
     }
 
     /**

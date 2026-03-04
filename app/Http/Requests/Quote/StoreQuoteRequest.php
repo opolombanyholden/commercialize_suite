@@ -14,7 +14,8 @@ class StoreQuoteRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'client_id' => ['required', 'exists:clients,id'],
+            'client_id'   => ['nullable', 'exists:clients,id'],
+            'client_name' => ['nullable', 'string', 'max:255'],
             'site_id' => ['nullable', 'exists:sites,id'],
             'quote_date' => ['nullable', 'date'],
             'valid_until' => ['nullable', 'date', 'after_or_equal:quote_date'],
@@ -39,7 +40,8 @@ class StoreQuoteRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'client_id.required' => 'Le client est requis.',
+            'client_id.required'   => 'Le client est requis.',
+            'client_name.required' => 'Le nom du client est requis.',
             'items.required' => 'Au moins une ligne est requise.',
             'items.min' => 'Au moins une ligne est requise.',
             'items.*.description.required' => 'La description est requise pour chaque ligne.',

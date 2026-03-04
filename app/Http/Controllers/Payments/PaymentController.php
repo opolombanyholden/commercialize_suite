@@ -26,10 +26,17 @@ class PaymentController extends Controller
      */
     public function index(Request $request): View
     {
-        $companyId = $request->user()->company_id;
+        $user      = $request->user();
+        $companyId = $user->company_id;
 
         $query = Payment::where('company_id', $companyId)
             ->with(['invoice', 'user']);
+
+        // Filtrage par site pour les utilisateurs non-admins
+        if (!$user->hasAccessToAllSites()) {
+            $siteIds = $user->getSiteIds();
+            $query->whereIn('site_id', $siteIds);
+        }
 
         // Recherche
         if ($search = $request->input('search')) {
@@ -57,14 +64,18 @@ class PaymentController extends Controller
 
         $payments = $query->latest('payment_date')->paginate(15)->withQueryString();
 
-        // Statistiques
+        // Statistiques (scope identique au filtrage ci-dessus)
+        $statsQuery = Payment::where('company_id', $companyId);
+        if (!$user->hasAccessToAllSites()) {
+            $statsQuery->whereIn('site_id', $user->getSiteIds());
+        }
         $stats = [
-            'total_amount' => Payment::where('company_id', $companyId)->sum('amount'),
-            'this_month' => Payment::where('company_id', $companyId)
+            'total_amount' => (clone $statsQuery)->sum('amount'),
+            'this_month'   => (clone $statsQuery)
                 ->whereMonth('payment_date', now()->month)
                 ->whereYear('payment_date', now()->year)
                 ->sum('amount'),
-            'count' => Payment::where('company_id', $companyId)->count(),
+            'count'        => (clone $statsQuery)->count(),
         ];
 
         return view('payments.index', compact('payments', 'stats'));
@@ -116,8 +127,9 @@ class PaymentController extends Controller
         $payment = Payment::create([
             'company_id' => $user->company_id,
             'invoice_id' => $invoice->id,
-            'user_id' => $user->id,
-            'amount' => $request->amount,
+            'user_id'    => $user->id,
+            'site_id'    => $invoice->site_id ?? $user->getPrimarySite()?->id,
+            'amount'     => $request->amount,
             'payment_date' => $request->payment_date ?? now(),
             'payment_method' => $request->payment_method,
             'reference' => $request->reference,

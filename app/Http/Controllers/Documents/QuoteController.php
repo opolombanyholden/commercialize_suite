@@ -8,6 +8,7 @@ use App\Http\Requests\Quote\UpdateQuoteRequest;
 use App\Models\Client;
 use App\Models\Invoice;
 use App\Models\Product;
+use App\Models\Promotion;
 use App\Models\Quote;
 use App\Models\Site;
 use App\Models\Tax;
@@ -34,10 +35,16 @@ class QuoteController extends Controller
      */
     public function index(Request $request): View
     {
-        $companyId = $request->user()->company_id;
+        $user      = $request->user();
+        $companyId = $user->company_id;
 
         $query = Quote::where('company_id', $companyId)
             ->with(['client', 'user']);
+
+        // Filtrage par site pour les utilisateurs non-admins
+        if (!$user->hasAccessToAllSites()) {
+            $query->whereIn('site_id', $user->getSiteIds());
+        }
 
         // Recherche
         if ($search = $request->input('search')) {
@@ -64,13 +71,17 @@ class QuoteController extends Controller
 
         $quotes = $query->latest('quote_date')->paginate(15)->withQueryString();
 
-        // Statistiques
-        $total = Quote::where('company_id', $companyId)->count();
-        $accepted = Quote::where('company_id', $companyId)->where('status', 'accepted')->count();
+        // Statistiques (scope identique au filtrage ci-dessus)
+        $statsQuery = Quote::where('company_id', $companyId);
+        if (!$user->hasAccessToAllSites()) {
+            $statsQuery->whereIn('site_id', $user->getSiteIds());
+        }
+        $total    = (clone $statsQuery)->count();
+        $accepted = (clone $statsQuery)->where('status', 'accepted')->count();
         $stats = [
-            'total' => $total,
-            'pending_count' => Quote::where('company_id', $companyId)->whereIn('status', ['draft', 'sent'])->count(),
-            'accepted_count' => $accepted,
+            'total'           => $total,
+            'pending_count'   => (clone $statsQuery)->whereIn('status', ['draft', 'sent'])->count(),
+            'accepted_count'  => $accepted,
             'conversion_rate' => $total > 0 ? round($accepted / $total * 100, 1) : 0,
         ];
 
@@ -82,12 +93,12 @@ class QuoteController extends Controller
      */
     public function create(Request $request): View
     {
-        $companyId = $request->user()->company_id;
+        $user      = $request->user();
+        $companyId = $user->company_id;
 
-        $clients = Client::where('company_id', $companyId)
-            ->where('is_active', true)
-            ->orderBy('name')
-            ->get();
+        $clients = $user->hasFeature('save_clients')
+            ? Client::where('company_id', $companyId)->where('is_active', true)->orderBy('name')->get()
+            : collect();
 
         $products = Product::where('company_id', $companyId)
             ->where('is_active', true)
@@ -99,13 +110,15 @@ class QuoteController extends Controller
             ->ordered()
             ->get();
 
-        $sites = Site::where('company_id', $companyId)
-            ->where('is_active', true)
-            ->get();
+        $sitesQuery = Site::where('company_id', $companyId)->where('is_active', true);
+        if (!$user->hasAccessToAllSites()) {
+            $sitesQuery->whereIn('id', $user->getSiteIds());
+        }
+        $sites = $sitesQuery->ordered()->get();
 
         // Client présélectionné
         $selectedClient = null;
-        if ($clientId = $request->input('client_id')) {
+        if ($user->hasFeature('save_clients') && $clientId = $request->input('client_id')) {
             $selectedClient = Client::find($clientId);
         }
 
@@ -124,27 +137,47 @@ class QuoteController extends Controller
         try {
             DB::beginTransaction();
 
+            // Promo code lookup
+            $promoModel    = null;
+            $discountType  = $request->discount_type ?: null;
+            $discountValue = $discountType ? ($request->discount_value ?? 0) : 0;
+
+            if ($request->filled('promo_code')) {
+                $promoModel = Promotion::where('company_id', $user->company_id)
+                    ->where('code', strtoupper($request->promo_code))
+                    ->first();
+            }
+
             // Données du devis
             $quoteData = [
-                'company_id' => $user->company_id,
-                'site_id' => $request->site_id ?? $user->getPrimarySite()?->id,
-                'user_id' => $user->id,
-                'client_id' => $request->client_id,
-                'quote_date' => $request->quote_date ?? now(),
-                'valid_until' => $request->valid_until ?? now()->addDays(30),
-                'status' => 'draft',
-                'notes' => $request->notes,
-                'terms' => $request->terms,
+                'company_id'     => $user->company_id,
+                'site_id'        => $request->site_id ?? $user->getPrimarySite()?->id,
+                'user_id'        => $user->id,
+                'client_id'      => $request->client_id,
+                'quote_date'     => $request->quote_date ?? now(),
+                'valid_until'    => $request->valid_until ?? now()->addDays(30),
+                'status'         => 'draft',
+                'discount_type'  => $discountType,
+                'discount_value' => $discountValue,
+                'promo_id'       => $promoModel?->id,
+                'promo_code'     => $promoModel ? $promoModel->code : null,
+                'notes'          => $request->notes,
+                'terms'          => $request->terms,
             ];
 
             // Infos client
             if ($client = Client::find($request->client_id)) {
                 $quoteData = array_merge($quoteData, [
-                    'client_name' => $client->display_name,
-                    'client_email' => $client->email,
-                    'client_phone' => $client->phone,
+                    'client_name'    => $client->display_name,
+                    'client_email'   => $client->email,
+                    'client_phone'   => $client->phone,
                     'client_address' => $client->full_address,
                 ]);
+            } else {
+                $quoteData['client_name']    = $request->client_name;
+                $quoteData['client_email']   = $request->client_email;
+                $quoteData['client_phone']   = $request->client_phone;
+                $quoteData['client_address'] = $request->client_address;
             }
 
             $quote = Quote::create($quoteData);
@@ -152,13 +185,15 @@ class QuoteController extends Controller
             // Ajouter les lignes
             foreach ($request->items as $index => $item) {
                 $quote->items()->create([
-                    'product_id' => $item['product_id'] ?? null,
-                    'description' => $item['description'],
-                    'details' => $item['details'] ?? null,
-                    'type' => $item['type'] ?? 'product',
-                    'quantity' => $item['quantity'],
-                    'unit_price' => $item['unit_price'],
-                    'sort_order' => $index,
+                    'product_id'     => $item['product_id'] ?? null,
+                    'description'    => $item['description'],
+                    'details'        => $item['details'] ?? null,
+                    'type'           => $item['type'] ?? 'product',
+                    'quantity'       => $item['quantity'],
+                    'unit_price'     => $item['unit_price'],
+                    'discount_type'  => $item['discount_type'] ?? null,
+                    'discount_value' => $item['discount_value'] ?? 0,
+                    'sort_order'     => $index,
                 ]);
             }
 
@@ -167,26 +202,29 @@ class QuoteController extends Controller
                 foreach ($request->taxes as $taxId) {
                     $tax = Tax::find($taxId);
                     if ($tax) {
-                        // Calculer la base imposable
+                        // Calculer la base imposable (avant remise globale)
                         $taxableBase = $quote->items()
                             ->when($tax->apply_to === 'products', fn($q) => $q->where('type', 'product'))
                             ->when($tax->apply_to === 'services', fn($q) => $q->where('type', 'service'))
                             ->sum('total');
 
                         $quote->taxes()->create([
-                            'tax_id' => $tax->id,
-                            'tax_name' => $tax->name,
-                            'tax_rate' => $tax->rate,
-                            'apply_to' => $tax->apply_to,
-                            'taxable_base' => $taxableBase,
-                            'tax_amount' => round($taxableBase * ($tax->rate / 100), 2),
+                            'tax_id'        => $tax->id,
+                            'tax_name'      => $tax->name,
+                            'tax_rate'      => $tax->rate,
+                            'apply_to'      => $tax->apply_to,
+                            'taxable_base'  => $taxableBase,
+                            'tax_amount'    => round($taxableBase * ($tax->rate / 100), 2),
                         ]);
                     }
                 }
             }
 
-            // Recalculer les totaux
+            // Recalculer les totaux (proratise les taxes par rapport à la remise globale)
             $quote->calculateTotals();
+
+            // Incrémenter le compteur de la promo si utilisée
+            $promoModel?->increment('uses_count');
 
             DB::commit();
 
@@ -227,12 +265,12 @@ class QuoteController extends Controller
                 ->with('error', 'Ce devis ne peut plus être modifié.');
         }
 
-        $companyId = $request->user()->company_id;
+        $user      = $request->user();
+        $companyId = $user->company_id;
 
-        $clients = Client::where('company_id', $companyId)
-            ->where('is_active', true)
-            ->orderBy('name')
-            ->get();
+        $clients = $user->hasFeature('save_clients')
+            ? Client::where('company_id', $companyId)->where('is_active', true)->orderBy('name')->get()
+            : collect();
 
         $products = Product::where('company_id', $companyId)
             ->where('is_active', true)
@@ -244,9 +282,11 @@ class QuoteController extends Controller
             ->ordered()
             ->get();
 
-        $sites = Site::where('company_id', $companyId)
-            ->where('is_active', true)
-            ->get();
+        $sitesQuery = Site::where('company_id', $companyId)->where('is_active', true);
+        if (!$user->hasAccessToAllSites()) {
+            $sitesQuery->whereIn('id', $user->getSiteIds());
+        }
+        $sites = $sitesQuery->ordered()->get();
 
         $quote->load(['items', 'taxes']);
         $selectedTaxes = $quote->taxes->pluck('tax_id')->toArray();
@@ -270,16 +310,32 @@ class QuoteController extends Controller
         try {
             DB::beginTransaction();
 
+            // Promo code handling for update
+            $discountType  = $request->discount_type ?: null;
+            $discountValue = $discountType ? ($request->discount_value ?? 0) : 0;
+            $promoModel    = null;
+            $newPromoCode  = $request->filled('promo_code') ? strtoupper($request->promo_code) : null;
+
+            if ($newPromoCode) {
+                $promoModel = Promotion::where('company_id', $quote->company_id)
+                    ->where('code', $newPromoCode)
+                    ->first();
+            }
+
             // Mettre à jour les infos générales
             $newStatus = $request->status ?? $quote->status;
             $updateData = [
-                'client_id' => $request->client_id,
-                'site_id' => $request->site_id,
-                'quote_date' => $request->quote_date,
-                'valid_until' => $request->valid_until,
-                'notes' => $request->notes,
-                'terms' => $request->terms,
-                'status' => $newStatus,
+                'client_id'      => $request->client_id,
+                'site_id'        => $request->site_id,
+                'quote_date'     => $request->quote_date,
+                'valid_until'    => $request->valid_until,
+                'discount_type'  => $discountType,
+                'discount_value' => $discountValue,
+                'promo_id'       => $promoModel?->id,
+                'promo_code'     => $promoModel ? $promoModel->code : null,
+                'notes'          => $request->notes,
+                'terms'          => $request->terms,
+                'status'         => $newStatus,
             ];
 
             // Enregistrer la date d'envoi si le statut passe à "envoyé"
@@ -292,10 +348,17 @@ class QuoteController extends Controller
             // Mettre à jour les infos client
             if ($client = Client::find($request->client_id)) {
                 $quote->update([
-                    'client_name' => $client->display_name,
-                    'client_email' => $client->email,
-                    'client_phone' => $client->phone,
+                    'client_name'    => $client->display_name,
+                    'client_email'   => $client->email,
+                    'client_phone'   => $client->phone,
                     'client_address' => $client->full_address,
+                ]);
+            } else {
+                $quote->update([
+                    'client_name'    => $request->client_name,
+                    'client_email'   => $request->client_email,
+                    'client_phone'   => $request->client_phone,
+                    'client_address' => $request->client_address,
                 ]);
             }
 
@@ -303,13 +366,15 @@ class QuoteController extends Controller
             $quote->items()->delete();
             foreach ($request->items as $index => $item) {
                 $quote->items()->create([
-                    'product_id' => $item['product_id'] ?? null,
-                    'description' => $item['description'],
-                    'details' => $item['details'] ?? null,
-                    'type' => $item['type'] ?? 'product',
-                    'quantity' => $item['quantity'],
-                    'unit_price' => $item['unit_price'],
-                    'sort_order' => $index,
+                    'product_id'     => $item['product_id'] ?? null,
+                    'description'    => $item['description'],
+                    'details'        => $item['details'] ?? null,
+                    'type'           => $item['type'] ?? 'product',
+                    'quantity'       => $item['quantity'],
+                    'unit_price'     => $item['unit_price'],
+                    'discount_type'  => $item['discount_type'] ?? null,
+                    'discount_value' => $item['discount_value'] ?? 0,
+                    'sort_order'     => $index,
                 ]);
             }
 
@@ -325,18 +390,23 @@ class QuoteController extends Controller
                             ->sum('total');
 
                         $quote->taxes()->create([
-                            'tax_id' => $tax->id,
-                            'tax_name' => $tax->name,
-                            'tax_rate' => $tax->rate,
-                            'apply_to' => $tax->apply_to,
+                            'tax_id'       => $tax->id,
+                            'tax_name'     => $tax->name,
+                            'tax_rate'     => $tax->rate,
+                            'apply_to'     => $tax->apply_to,
                             'taxable_base' => $taxableBase,
-                            'tax_amount' => round($taxableBase * ($tax->rate / 100), 2),
+                            'tax_amount'   => round($taxableBase * ($tax->rate / 100), 2),
                         ]);
                     }
                 }
             }
 
             $quote->calculateTotals();
+
+            // Incrémenter le compteur promo si c'est un nouveau code
+            if ($promoModel && $newPromoCode !== $quote->getOriginal('promo_code')) {
+                $promoModel->increment('uses_count');
+            }
 
             DB::commit();
 
@@ -470,6 +540,29 @@ class QuoteController extends Controller
 
         try {
             $invoice = Invoice::createFromQuote($quote);
+
+            // Vérifier les stocks pour les articles de type produit
+            $stockIssues = [];
+            $invoice->loadMissing('items');
+            foreach ($invoice->items as $item) {
+                if (!$item->product_id || $item->type !== 'product') {
+                    continue;
+                }
+                $product = \App\Models\Product::find($item->product_id);
+                if (!$product || !$product->track_inventory) {
+                    continue;
+                }
+                if ((float) $item->quantity > (float) $product->stock_quantity) {
+                    $stockIssues[] = "« {$item->description} » : qté {$item->quantity} > stock {$product->stock_quantity}";
+                }
+            }
+
+            if (!empty($stockIssues)) {
+                $warning = 'Stock insuffisant pour : ' . implode(', ', $stockIssues) . '. Corrigez les lignes en rouge avant d\'envoyer la facture.';
+                return redirect()
+                    ->route('invoices.edit', $invoice)
+                    ->with('warning', $warning);
+            }
 
             return redirect()
                 ->route('invoices.show', $invoice)

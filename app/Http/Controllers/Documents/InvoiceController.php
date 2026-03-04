@@ -6,8 +6,11 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Invoice\StoreInvoiceRequest;
 use App\Http\Requests\Invoice\UpdateInvoiceRequest;
 use App\Models\Client;
+use App\Models\DeliveryNote;
 use App\Models\Invoice;
+use App\Models\Payment;
 use App\Models\Product;
+use App\Models\Promotion;
 use App\Models\Site;
 use App\Models\Tax;
 use App\Services\PdfService;
@@ -32,11 +35,17 @@ class InvoiceController extends Controller
      */
     public function index(Request $request): View
     {
-        $companyId = $request->user()->company_id;
+        $user      = $request->user();
+        $companyId = $user->company_id;
 
         $query = Invoice::where('company_id', $companyId)
             ->invoicesOnly()
             ->with(['client', 'user', 'deliveryNotes']);
+
+        // Filtrage par site pour les utilisateurs non-admins
+        if (!$user->hasAccessToAllSites()) {
+            $query->whereIn('site_id', $user->getSiteIds());
+        }
 
         // Recherche
         if ($search = $request->input('search')) {
@@ -74,20 +83,15 @@ class InvoiceController extends Controller
         $invoices = $query->latest('invoice_date')->paginate(15)->withQueryString();
 
         // Statistiques (factures uniquement, pas les avoirs)
+        $baseStats = Invoice::where('company_id', $companyId)->invoicesOnly();
+        if (!$user->hasAccessToAllSites()) {
+            $baseStats->whereIn('site_id', $user->getSiteIds());
+        }
         $stats = [
-            'total' => Invoice::where('company_id', $companyId)->invoicesOnly()
-                ->where('status', '!=', 'cancelled')
-                ->sum('total_amount'),
-            'paid' => Invoice::where('company_id', $companyId)->invoicesOnly()
-                ->where('status', '!=', 'cancelled')
-                ->sum('paid_amount'),
-            'pending' => Invoice::where('company_id', $companyId)->invoicesOnly()
-                ->where('status', '!=', 'cancelled')
-                ->pending()
-                ->sum('balance'),
-            'overdue' => Invoice::where('company_id', $companyId)->invoicesOnly()
-                ->overdue()
-                ->sum('balance'),
+            'total'   => (clone $baseStats)->where('status', '!=', 'cancelled')->sum('total_amount'),
+            'paid'    => (clone $baseStats)->where('status', '!=', 'cancelled')->sum('paid_amount'),
+            'pending' => (clone $baseStats)->where('status', '!=', 'cancelled')->pending()->sum('balance'),
+            'overdue' => (clone $baseStats)->overdue()->sum('balance'),
         ];
 
         return view('invoices.index', compact('invoices', 'stats'));
@@ -98,12 +102,12 @@ class InvoiceController extends Controller
      */
     public function create(Request $request): View
     {
-        $companyId = $request->user()->company_id;
+        $user      = $request->user();
+        $companyId = $user->company_id;
 
-        $clients = Client::where('company_id', $companyId)
-            ->where('is_active', true)
-            ->orderBy('name')
-            ->get();
+        $clients = $user->hasFeature('save_clients')
+            ? Client::where('company_id', $companyId)->where('is_active', true)->orderBy('name')->get()
+            : collect();
 
         $products = Product::where('company_id', $companyId)
             ->where('is_active', true)
@@ -115,12 +119,14 @@ class InvoiceController extends Controller
             ->ordered()
             ->get();
 
-        $sites = Site::where('company_id', $companyId)
-            ->where('is_active', true)
-            ->get();
+        $sitesQuery = Site::where('company_id', $companyId)->where('is_active', true);
+        if (!$user->hasAccessToAllSites()) {
+            $sitesQuery->whereIn('id', $user->getSiteIds());
+        }
+        $sites = $sitesQuery->ordered()->get();
 
         $selectedClient = null;
-        if ($clientId = $request->input('client_id')) {
+        if ($user->hasFeature('save_clients') && $clientId = $request->input('client_id')) {
             $selectedClient = Client::find($clientId);
         }
 
@@ -139,26 +145,46 @@ class InvoiceController extends Controller
         try {
             DB::beginTransaction();
 
+            // Promo code lookup
+            $promoModel    = null;
+            $discountType  = $request->discount_type ?: null;
+            $discountValue = $discountType ? ($request->discount_value ?? 0) : 0;
+
+            if ($request->filled('promo_code')) {
+                $promoModel = Promotion::where('company_id', $user->company_id)
+                    ->where('code', strtoupper($request->promo_code))
+                    ->first();
+            }
+
             $invoiceData = [
-                'company_id' => $user->company_id,
-                'site_id' => $request->site_id ?? $user->getPrimarySite()?->id,
-                'user_id' => $user->id,
-                'client_id' => $request->client_id,
-                'invoice_date' => $request->invoice_date ?? now(),
-                'due_date' => $request->due_date ?? now()->addDays(30),
-                'status' => 'draft',
+                'company_id'     => $user->company_id,
+                'site_id'        => $request->site_id ?? $user->getPrimarySite()?->id,
+                'user_id'        => $user->id,
+                'client_id'      => $request->client_id,
+                'invoice_date'   => $request->invoice_date ?? now(),
+                'due_date'       => $request->due_date ?? now()->addDays(30),
+                'status'         => 'sent',
                 'payment_status' => 'unpaid',
-                'notes' => $request->notes,
-                'terms' => $request->terms,
+                'discount_type'  => $discountType,
+                'discount_value' => $discountValue,
+                'promo_id'       => $promoModel?->id,
+                'promo_code'     => $promoModel ? $promoModel->code : null,
+                'notes'          => $request->notes,
+                'terms'          => $request->terms,
             ];
 
             if ($client = Client::find($request->client_id)) {
                 $invoiceData = array_merge($invoiceData, [
-                    'client_name' => $client->display_name,
-                    'client_email' => $client->email,
-                    'client_phone' => $client->phone,
+                    'client_name'    => $client->display_name,
+                    'client_email'   => $client->email,
+                    'client_phone'   => $client->phone,
                     'client_address' => $client->full_address,
                 ]);
+            } else {
+                $invoiceData['client_name']    = $request->client_name;
+                $invoiceData['client_email']   = $request->client_email;
+                $invoiceData['client_phone']   = $request->client_phone;
+                $invoiceData['client_address'] = $request->client_address;
             }
 
             $invoice = Invoice::create($invoiceData);
@@ -166,13 +192,15 @@ class InvoiceController extends Controller
             // Ajouter les lignes
             foreach ($request->items as $index => $item) {
                 $invoice->items()->create([
-                    'product_id' => $item['product_id'] ?? null,
-                    'description' => $item['description'],
-                    'details' => $item['details'] ?? null,
-                    'type' => $item['type'] ?? 'product',
-                    'quantity' => $item['quantity'],
-                    'unit_price' => $item['unit_price'],
-                    'sort_order' => $index,
+                    'product_id'     => $item['product_id'] ?? null,
+                    'description'    => $item['description'],
+                    'details'        => $item['details'] ?? null,
+                    'type'           => $item['type'] ?? 'product',
+                    'quantity'       => $item['quantity'],
+                    'unit_price'     => $item['unit_price'],
+                    'discount_type'  => $item['discount_type'] ?? null,
+                    'discount_value' => $item['discount_value'] ?? 0,
+                    'sort_order'     => $index,
                 ]);
             }
 
@@ -187,12 +215,12 @@ class InvoiceController extends Controller
                             ->sum('total');
 
                         $invoice->taxes()->create([
-                            'tax_id' => $tax->id,
-                            'tax_name' => $tax->name,
-                            'tax_rate' => $tax->rate,
-                            'apply_to' => $tax->apply_to,
+                            'tax_id'       => $tax->id,
+                            'tax_name'     => $tax->name,
+                            'tax_rate'     => $tax->rate,
+                            'apply_to'     => $tax->apply_to,
                             'taxable_base' => $taxableBase,
-                            'tax_amount' => round($taxableBase * ($tax->rate / 100), 2),
+                            'tax_amount'   => round($taxableBase * ($tax->rate / 100), 2),
                         ]);
                     }
                 }
@@ -200,11 +228,74 @@ class InvoiceController extends Controller
 
             $invoice->calculateTotals();
 
+            // Incrémenter le compteur de la promo si utilisée
+            $promoModel?->increment('uses_count');
+
+            // Paiement immédiat
+            if ($request->boolean('payment_immediate')) {
+                Payment::create([
+                    'company_id'     => $user->company_id,
+                    'invoice_id'     => $invoice->id,
+                    'user_id'        => $user->id,
+                    'site_id'        => $invoice->site_id,
+                    'amount'         => $invoice->total_amount,
+                    'payment_date'   => now(),
+                    'payment_method' => $request->input('payment_method', 'cash'),
+                    'reference'      => $request->input('payment_reference') ?: null,
+                    'is_confirmed'   => true,
+                    'confirmed_at'   => now(),
+                    'confirmed_by'   => $user->id,
+                ]);
+                // Le boot hook de Payment appelle automatiquement $invoice->recordPayment()
+            }
+
+            // Livraison immédiate
+            if ($request->boolean('delivery_immediate')) {
+                $invoice->loadMissing('items');
+                $dn = DeliveryNote::create([
+                    'company_id'       => $invoice->company_id,
+                    'site_id'          => $invoice->site_id,
+                    'user_id'          => $user->id,
+                    'invoice_id'       => $invoice->id,
+                    'client_id'        => $invoice->client_id,
+                    'client_name'      => $invoice->client_name,
+                    'client_email'     => $invoice->client_email,
+                    'client_phone'     => $invoice->client_phone,
+                    'client_address'   => $invoice->client_address,
+                    'delivery_address' => $invoice->client_address,
+                    'planned_date'     => now()->toDateString(),
+                    'delivered_date'   => now()->toDateString(),
+                    'status'           => 'delivered',
+                    'notes'            => 'Livraison immédiate',
+                ]);
+
+                foreach ($invoice->items as $idx => $item) {
+                    $dn->items()->create([
+                        'product_id'  => $item->product_id,
+                        'description' => $item->description,
+                        'quantity'    => $item->quantity,
+                        'sort_order'  => $idx,
+                    ]);
+                    // Décrémenter le stock pour les produits trackés
+                    if ($item->product_id && $item->type === 'product') {
+                        Product::find($item->product_id)?->decrementStock($item->quantity);
+                    }
+                }
+            }
+
             DB::commit();
+
+            $msg = 'Facture créée avec succès.';
+            if ($request->boolean('payment_immediate')) {
+                $msg .= ' Paiement enregistré.';
+            }
+            if ($request->boolean('delivery_immediate')) {
+                $msg .= ' Bon de livraison créé.';
+            }
 
             return redirect()
                 ->route('invoices.show', $invoice)
-                ->with('success', 'Facture créée avec succès.');
+                ->with('success', $msg);
 
         } catch (\Exception $e) {
             DB::rollBack();
@@ -240,12 +331,19 @@ class InvoiceController extends Controller
                 ->with('error', 'Seules les factures en brouillon peuvent être modifiées.');
         }
 
-        $companyId = $request->user()->company_id;
+        $user      = $request->user();
+        $companyId = $user->company_id;
 
-        $clients = Client::where('company_id', $companyId)->where('is_active', true)->orderBy('name')->get();
+        $clients = $user->hasFeature('save_clients')
+            ? Client::where('company_id', $companyId)->where('is_active', true)->orderBy('name')->get()
+            : collect();
         $products = Product::where('company_id', $companyId)->where('is_active', true)->orderBy('name')->get();
         $taxes = Tax::where('company_id', $companyId)->where('is_active', true)->ordered()->get();
-        $sites = Site::where('company_id', $companyId)->where('is_active', true)->get();
+        $sitesQuery = Site::where('company_id', $companyId)->where('is_active', true);
+        if (!$user->hasAccessToAllSites()) {
+            $sitesQuery->whereIn('id', $user->getSiteIds());
+        }
+        $sites = $sitesQuery->ordered()->get();
 
         $invoice->load(['items', 'taxes']);
         $selectedTaxes = $invoice->taxes->pluck('tax_id')->toArray();
@@ -269,21 +367,44 @@ class InvoiceController extends Controller
         try {
             DB::beginTransaction();
 
+            // Promo code handling for update
+            $discountType  = $request->discount_type ?: null;
+            $discountValue = $discountType ? ($request->discount_value ?? 0) : 0;
+            $promoModel    = null;
+            $newPromoCode  = $request->filled('promo_code') ? strtoupper($request->promo_code) : null;
+
+            if ($newPromoCode) {
+                $promoModel = Promotion::where('company_id', $invoice->company_id)
+                    ->where('code', $newPromoCode)
+                    ->first();
+            }
+
             $invoice->update([
-                'client_id' => $request->client_id,
-                'site_id' => $request->site_id,
-                'invoice_date' => $request->invoice_date,
-                'due_date' => $request->due_date,
-                'notes' => $request->notes,
-                'terms' => $request->terms,
+                'client_id'      => $request->client_id,
+                'site_id'        => $request->site_id,
+                'invoice_date'   => $request->invoice_date,
+                'due_date'       => $request->due_date,
+                'discount_type'  => $discountType,
+                'discount_value' => $discountValue,
+                'promo_id'       => $promoModel?->id,
+                'promo_code'     => $promoModel ? $promoModel->code : null,
+                'notes'          => $request->notes,
+                'terms'          => $request->terms,
             ]);
 
             if ($client = Client::find($request->client_id)) {
                 $invoice->update([
-                    'client_name' => $client->display_name,
-                    'client_email' => $client->email,
-                    'client_phone' => $client->phone,
+                    'client_name'    => $client->display_name,
+                    'client_email'   => $client->email,
+                    'client_phone'   => $client->phone,
                     'client_address' => $client->full_address,
+                ]);
+            } else {
+                $invoice->update([
+                    'client_name'    => $request->client_name,
+                    'client_email'   => $request->client_email,
+                    'client_phone'   => $request->client_phone,
+                    'client_address' => $request->client_address,
                 ]);
             }
 
@@ -291,13 +412,15 @@ class InvoiceController extends Controller
             $invoice->items()->delete();
             foreach ($request->items as $index => $item) {
                 $invoice->items()->create([
-                    'product_id' => $item['product_id'] ?? null,
-                    'description' => $item['description'],
-                    'details' => $item['details'] ?? null,
-                    'type' => $item['type'] ?? 'product',
-                    'quantity' => $item['quantity'],
-                    'unit_price' => $item['unit_price'],
-                    'sort_order' => $index,
+                    'product_id'     => $item['product_id'] ?? null,
+                    'description'    => $item['description'],
+                    'details'        => $item['details'] ?? null,
+                    'type'           => $item['type'] ?? 'product',
+                    'quantity'       => $item['quantity'],
+                    'unit_price'     => $item['unit_price'],
+                    'discount_type'  => $item['discount_type'] ?? null,
+                    'discount_value' => $item['discount_value'] ?? 0,
+                    'sort_order'     => $index,
                 ]);
             }
 
@@ -313,18 +436,23 @@ class InvoiceController extends Controller
                             ->sum('total');
 
                         $invoice->taxes()->create([
-                            'tax_id' => $tax->id,
-                            'tax_name' => $tax->name,
-                            'tax_rate' => $tax->rate,
-                            'apply_to' => $tax->apply_to,
+                            'tax_id'       => $tax->id,
+                            'tax_name'     => $tax->name,
+                            'tax_rate'     => $tax->rate,
+                            'apply_to'     => $tax->apply_to,
                             'taxable_base' => $taxableBase,
-                            'tax_amount' => round($taxableBase * ($tax->rate / 100), 2),
+                            'tax_amount'   => round($taxableBase * ($tax->rate / 100), 2),
                         ]);
                     }
                 }
             }
 
             $invoice->calculateTotals();
+
+            // Incrémenter le compteur promo si c'est un nouveau code
+            if ($promoModel && $newPromoCode !== $invoice->getOriginal('promo_code')) {
+                $promoModel->increment('uses_count');
+            }
 
             DB::commit();
 
@@ -367,7 +495,7 @@ class InvoiceController extends Controller
     {
         $this->authorizeCompany($request, $invoice);
 
-        $invoice->load(['company', 'client', 'items', 'taxes', 'payments']);
+        $invoice->load(['company', 'client', 'items', 'taxes', 'payments', 'deliveryNotes']);
 
         return $pdfService->download(
             'pdf.invoice',
@@ -496,6 +624,27 @@ class InvoiceController extends Controller
         ];
 
         return back()->with('success', 'Statut mis à jour : ' . ($labels[$newStatus] ?? $newStatus) . '.');
+    }
+
+    /**
+     * Générer un code PIN de livraison pour la facture
+     */
+    public function generatePin(Request $request, Invoice $invoice): RedirectResponse
+    {
+        $this->authorizeCompany($request, $invoice);
+
+        if ($invoice->status === 'cancelled') {
+            return back()->with('error', 'Impossible de générer un code pour une facture annulée.');
+        }
+
+        $pin = Invoice::generateDeliveryPin();
+
+        $invoice->update([
+            'delivery_pin'              => $pin,
+            'delivery_pin_generated_at' => now(),
+        ]);
+
+        return back()->with('pin_generated', $pin);
     }
 
     /**

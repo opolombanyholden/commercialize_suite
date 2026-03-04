@@ -18,6 +18,7 @@ class Payment extends Model
         'company_id',
         'invoice_id',
         'user_id',
+        'site_id',
         'payment_number',
         'amount',
         'payment_date',
@@ -88,6 +89,11 @@ class Payment extends Model
     }
 
     // ===== RELATIONS =====
+
+    public function site(): BelongsTo
+    {
+        return $this->belongsTo(Site::class);
+    }
 
     public function invoice(): BelongsTo
     {
