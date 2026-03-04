@@ -3,7 +3,6 @@
 @section('title', 'Rôles et permissions')
 
 @section('breadcrumb')
-<li class="breadcrumb-item"><a href="{{ route('admin.index') }}">Administration</a></li>
 <li class="breadcrumb-item active">Rôles</li>
 @endsection
 
@@ -31,27 +30,19 @@
                 <span class="badge fs-6" style="background-color: {{ $role->color ?? '#6c757d' }}">
                     {{ $role->name }}
                 </span>
-                @if($role->is_system_role)
+                @if($role->is_system_role ?? false)
                     <span class="badge bg-light text-muted"><i class="fas fa-lock me-1"></i>Système</span>
                 @endif
             </div>
             <div class="card-body">
                 <p class="text-muted small mb-3">{{ $role->description ?? 'Aucune description' }}</p>
                 
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                    <span class="text-muted small">Niveau d'accès</span>
-                    <div class="progress flex-grow-1 mx-2" style="height: 8px;">
-                        <div class="progress-bar" style="width: {{ $role->level }}%; background-color: {{ $role->color ?? '#6c757d' }}"></div>
-                    </div>
-                    <span class="badge bg-light text-dark">{{ $role->level }}</span>
-                </div>
-                
                 <div class="d-flex justify-content-between align-items-center">
                     <span class="text-muted small">
                         <i class="fas fa-users me-1"></i>{{ $role->users_count ?? 0 }} utilisateur(s)
                     </span>
                     <span class="text-muted small">
-                        <i class="fas fa-key me-1"></i>{{ $role->permissions_count ?? $role->permissions->count() }} permission(s)
+                        <i class="fas fa-key me-1"></i>{{ $role->permissions_count ?? 0 }} permission(s)
                     </span>
                 </div>
             </div>
@@ -60,7 +51,7 @@
                     <button type="button" class="btn btn-sm btn-outline-primary flex-grow-1" onclick="viewPermissions({{ json_encode($role) }})">
                         <i class="fas fa-eye me-1"></i>Permissions
                     </button>
-                    @if(!$role->is_system_role)
+                    @if(!($role->is_system_role ?? false))
                         @can('roles.edit')
                         <button type="button" class="btn btn-sm btn-outline-secondary" onclick="editRole({{ json_encode($role) }})">
                             <i class="fas fa-edit"></i>
