@@ -3,7 +3,6 @@
 @section('title', 'Utilisateurs')
 
 @section('breadcrumb')
-<li class="breadcrumb-item"><a href="{{ route('admin.index') }}">Administration</a></li>
 <li class="breadcrumb-item active">Utilisateurs</li>
 @endsection
 
@@ -125,24 +124,16 @@
                                     @can('users.edit')
                                     <li><a class="dropdown-item" href="{{ route('admin.users.edit', $user) }}"><i class="fas fa-edit me-2"></i>Modifier</a></li>
                                     @endcan
-                                    @can('users.impersonate')
-                                    @if($user->id !== auth()->id())
-                                    <li><a class="dropdown-item" href="{{ route('admin.users.impersonate', $user) }}"><i class="fas fa-user-secret me-2"></i>Se connecter en tant que</a></li>
-                                    @endif
-                                    @endcan
                                     <li><hr class="dropdown-divider"></li>
-                                    @if($user->is_active)
+                                    @if($user->id !== auth()->id())
                                     <li>
-                                        <form action="{{ route('admin.users.deactivate', $user) }}" method="POST">
+                                        <form action="{{ route('admin.users.toggle-status', $user) }}" method="POST">
                                             @csrf
-                                            <button type="submit" class="dropdown-item text-warning"><i class="fas fa-ban me-2"></i>Désactiver</button>
-                                        </form>
-                                    </li>
-                                    @else
-                                    <li>
-                                        <form action="{{ route('admin.users.activate', $user) }}" method="POST">
-                                            @csrf
-                                            <button type="submit" class="dropdown-item text-success"><i class="fas fa-check me-2"></i>Activer</button>
+                                            @if($user->is_active)
+                                                <button type="submit" class="dropdown-item text-warning"><i class="fas fa-ban me-2"></i>Désactiver</button>
+                                            @else
+                                                <button type="submit" class="dropdown-item text-success"><i class="fas fa-check me-2"></i>Activer</button>
+                                            @endif
                                         </form>
                                     </li>
                                     @endif

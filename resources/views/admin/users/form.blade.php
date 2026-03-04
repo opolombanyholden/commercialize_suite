@@ -1,14 +1,3 @@
-@extends('layouts.admin')
-
-@section('title', isset($user) ? 'Modifier l\'utilisateur' : 'Nouvel utilisateur')
-
-@section('breadcrumb')
-<li class="breadcrumb-item"><a href="{{ route('admin.index') }}">Administration</a></li>
-<li class="breadcrumb-item"><a href="{{ route('admin.users.index') }}">Utilisateurs</a></li>
-<li class="breadcrumb-item active">{{ isset($user) ? 'Modifier' : 'Nouveau' }}</li>
-@endsection
-
-@section('content')
 <form action="{{ isset($user) ? route('admin.users.update', $user) : route('admin.users.store') }}" method="POST" enctype="multipart/form-data">
     @csrf
     @if(isset($user))
@@ -187,7 +176,6 @@
         </div>
     </div>
 </form>
-@endsection
 
 @push('styles')
 <style>
