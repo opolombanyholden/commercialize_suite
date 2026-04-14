@@ -11,6 +11,37 @@ return [
     |
     */
 
+    /*
+    | Édition de déploiement
+    |
+    | Si définie (light|standard|pro|enterprise) → autoritative pour toute
+    | l'instance : toutes les vérifications de feature ignorent user.version
+    | et utilisent cette édition. Modèle "packagé" (on-premise, white-label).
+    |
+    | Si null/absente → fallback SaaS : chaque user utilise sa propre version.
+    */
+    'deployment_edition' => env('COMMERCIALIZE_EDITION', 'enterprise'),
+
+    /*
+    | Kill-switches par feature (override ponctuel, indépendant de l'édition)
+    |
+    | Permet de désactiver (ou forcer l'activation) d'une feature précise sans
+    | changer l'édition. Utile pour : désactiver un module buggé en prod,
+    | activer un module bêta pour tests. Prioritaire sur l'édition.
+    |
+    | Valeurs : true, false, ou absent (= suit l'édition). NE PAS utiliser
+    | comme mécanisme de licence — c'est un outil ops, pas un pricing tier.
+    */
+    'feature_overrides' => array_filter([
+        'ecommerce' => env('FEATURE_ECOMMERCE'),
+        'inventory' => env('FEATURE_INVENTORY'),
+        'multi_sites' => env('FEATURE_MULTI_SITES'),
+        'payments_tracking' => env('FEATURE_PAYMENTS_TRACKING'),
+        'reports_advanced' => env('FEATURE_REPORTS_ADVANCED'),
+        'audit_logs' => env('FEATURE_AUDIT_LOGS'),
+        'api_access' => env('FEATURE_API_ACCESS'),
+    ], fn ($v) => $v !== null),
+
     'features' => [
         'light' => [
             // Documents
