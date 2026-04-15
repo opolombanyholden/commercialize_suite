@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\DocumentStyle;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\View;
@@ -101,6 +102,7 @@ class PdfService
             'company' => $invoice->company,
             'items' => $invoice->items,
             'taxes' => $invoice->taxes,
+            'style' => DocumentStyle::forDocument($invoice->company_id, 'invoice'),
         ];
 
         $path = "invoices/{$invoice->company_id}/{$invoice->invoice_number}.pdf";
@@ -126,6 +128,7 @@ class PdfService
             'company' => $quote->company,
             'items' => $quote->items,
             'taxes' => $quote->taxes,
+            'style' => DocumentStyle::forDocument($quote->company_id, 'quote'),
         ];
 
         $path = "quotes/{$quote->company_id}/{$quote->quote_number}.pdf";
@@ -150,6 +153,7 @@ class PdfService
             'payment' => $payment,
             'invoice' => $payment->invoice,
             'company' => $payment->company,
+            'style' => DocumentStyle::forDocument($payment->company_id, 'payment_receipt'),
         ];
 
         $path = "payments/{$payment->company_id}/{$payment->payment_number}.pdf";

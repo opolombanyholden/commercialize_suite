@@ -34,6 +34,9 @@ class UpdateCompanyRequest extends FormRequest
             'timezone'            => ['nullable', 'string', 'max:50'],
             'logo'                => ['nullable', 'image', 'max:2048'],
             'remove_logo'         => ['nullable', 'boolean'],
+            'signature'           => ['nullable', 'image', 'max:1024'],
+            'remove_signature'    => ['nullable', 'boolean'],
+            'sales_conditions'    => ['nullable', 'string', 'max:5000'],
         ];
     }
 }

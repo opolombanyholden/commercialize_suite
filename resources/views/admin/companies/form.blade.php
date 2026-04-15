@@ -166,6 +166,21 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Conditions de vente -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Conditions de vente</h5>
+                </div>
+                <div class="card-body">
+                    <textarea class="form-control @error('sales_conditions') is-invalid @enderror" id="sales_conditions" name="sales_conditions" rows="4"
+                              placeholder="Saisissez vos conditions de vente par defaut...">{{ old('sales_conditions', $company->sales_conditions ?? '') }}</textarea>
+                    @error('sales_conditions')
+                        <div class="invalid-feedback">{{ $message }}</div>
+                    @enderror
+                    <div class="form-text">Ces conditions s'afficheront sur les devis et factures, sauf si un style de document specifique definit ses propres conditions.</div>
+                </div>
+            </div>
         </div>
 
         <!-- Sidebar -->
@@ -189,6 +204,34 @@
                         <div class="invalid-feedback">{{ $message }}</div>
                     @enderror
                     <small class="text-muted">JPG, PNG ou GIF. Max 2 Mo.</small>
+                </div>
+            </div>
+
+            <!-- Signature numérisée -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Signature numérisée</h5>
+                </div>
+                <div class="card-body text-center">
+                    <div class="signature-preview mb-3" id="signaturePreview">
+                        @if(isset($company) && $company->signature_image)
+                            <img src="{{ Storage::url($company->signature_image) }}" alt="Signature" id="previewSignatureImg">
+                        @else
+                            <i class="fas fa-signature fa-2x text-muted"></i>
+                            <p class="text-muted mb-0 mt-2">Aucune signature</p>
+                        @endif
+                    </div>
+                    <input type="file" class="form-control @error('signature') is-invalid @enderror" id="signature" name="signature" accept="image/*" onchange="previewSignature(this)">
+                    @error('signature')
+                        <div class="invalid-feedback">{{ $message }}</div>
+                    @enderror
+                    <small class="text-muted">PNG transparent recommandé. Max 1 Mo.</small>
+                    @if(isset($company) && $company->signature_image)
+                    <div class="form-check mt-2">
+                        <input class="form-check-input" type="checkbox" id="remove_signature" name="remove_signature" value="1">
+                        <label class="form-check-label text-danger" for="remove_signature">Supprimer la signature</label>
+                    </div>
+                    @endif
                 </div>
             </div>
 
@@ -263,6 +306,24 @@
     max-height: 100%;
     object-fit: contain;
 }
+.signature-preview {
+    width: 200px;
+    height: 80px;
+    border: 2px dashed #dee2e6;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto;
+    overflow: hidden;
+    background: #fafafa;
+}
+.signature-preview img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
 </style>
 @endpush
 
@@ -274,6 +335,16 @@ function previewLogo(input) {
         const reader = new FileReader();
         reader.onload = function(e) {
             preview.innerHTML = '<img src="' + e.target.result + '" id="previewImg">';
+        }
+        reader.readAsDataURL(input.files[0]);
+    }
+}
+function previewSignature(input) {
+    const preview = document.getElementById('signaturePreview');
+    if (input.files && input.files[0]) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            preview.innerHTML = '<img src="' + e.target.result + '" id="previewSignatureImg">';
         }
         reader.readAsDataURL(input.files[0]);
     }

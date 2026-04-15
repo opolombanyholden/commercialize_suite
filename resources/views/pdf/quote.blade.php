@@ -4,354 +4,121 @@
     <meta charset="UTF-8">
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
     <title>Devis {{ $quote->quote_number }}</title>
+    @php
+        $hH = isset($style) ? ($style->header_height_cm ?? 3.0) : 3.0;
+        $fH = isset($style) ? ($style->footer_height_cm ?? 2.5) : 2.5;
+        $mT = $hH + 0.2;
+        $mB = $fH + 0.2;
+    @endphp
     <style>
         @page {
-            margin: 1.5cm;
+            margin-top: {{ $mT }}cm;
+            margin-bottom: {{ $mB }}cm;
+            margin-left: 1.5cm;
+            margin-right: 1.5cm;
             size: A4 portrait;
         }
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        body {
-            font-family: 'DejaVu Sans', Arial, sans-serif;
-            font-size: 10pt;
-            line-height: 1.4;
-            color: #333;
-        }
-        .header {
-            display: table;
-            width: 100%;
-            margin-bottom: 25px;
-            border-bottom: 3px solid #2196F3;
-            padding-bottom: 15px;
-        }
-        .header-left, .header-right {
-            display: table-cell;
-            width: 50%;
-            vertical-align: top;
-        }
-        .header-right {
-            text-align: right;
-        }
-        .logo {
-            max-width: 150px;
-            max-height: 60px;
-        }
-        .company-info {
-            margin-top: 8px;
-            font-size: 9pt;
-            color: #666;
-        }
-        .doc-title {
-            font-size: 28pt;
-            font-weight: bold;
-            color: #2196F3;
-            margin-bottom: 5px;
-        }
-        .doc-number {
-            font-size: 11pt;
-            color: #666;
-        }
-        .info-section {
-            display: table;
-            width: 100%;
-            margin-bottom: 20px;
-        }
-        .info-box {
-            display: table-cell;
-            width: 50%;
-            vertical-align: top;
-            padding: 10px;
-        }
-        .info-box.client {
-            background-color: #e3f2fd;
-            border-left: 4px solid #2196F3;
-        }
-        .info-label {
-            font-size: 8pt;
-            color: #999;
-            text-transform: uppercase;
-            margin-bottom: 3px;
-        }
-        .info-value {
-            font-size: 10pt;
-            margin-bottom: 5px;
-        }
-        .info-value.highlight {
-            font-weight: bold;
-            font-size: 11pt;
-        }
-        .validity-box {
-            margin-top: 15px;
-            padding: 10px;
-            background-color: #fff8e1;
-            border: 1px solid #ffcc02;
-            border-radius: 4px;
-        }
-        .validity-box.expired {
-            background-color: #ffebee;
-            border-color: #f44336;
-        }
-        table.items {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 20px 0;
-        }
-        table.items thead {
-            background-color: #1976D2;
-            color: white;
-        }
-        table.items th {
-            padding: 10px 8px;
-            text-align: left;
-            font-size: 9pt;
-            font-weight: bold;
-        }
-        table.items th.right {
-            text-align: right;
-        }
-        table.items th.center {
-            text-align: center;
-        }
-        table.items td {
-            padding: 8px;
-            border-bottom: 1px solid #e0e0e0;
-            font-size: 9pt;
-        }
-        table.items td.right {
-            text-align: right;
-        }
-        table.items td.center {
-            text-align: center;
-        }
-        table.items tbody tr:nth-child(even) {
-            background-color: #fafafa;
-        }
-        .type-badge {
-            display: inline-block;
-            padding: 2px 8px;
-            border-radius: 3px;
-            font-size: 8pt;
-            background-color: #e3f2fd;
-            color: #1976d2;
-        }
-        .type-badge.product {
-            background-color: #fff3e0;
-            color: #f57c00;
-        }
-        .totals {
-            width: 45%;
-            margin-left: auto;
-            margin-top: 20px;
-        }
-        .totals-row {
-            display: table;
-            width: 100%;
-            padding: 5px 0;
-        }
-        .totals-label, .totals-value {
-            display: table-cell;
-        }
-        .totals-label {
-            text-align: right;
-            padding-right: 15px;
-            color: #666;
-        }
-        .totals-value {
-            text-align: right;
-            width: 120px;
-        }
-        .totals-row.grand {
-            border-top: 2px solid #1976D2;
-            margin-top: 8px;
-            padding-top: 8px;
-            font-size: 14pt;
-            font-weight: bold;
-            color: #2196F3;
-        }
-        .amount-words {
-            margin-top: 25px;
-            padding: 12px;
-            background-color: #f5f5f5;
-            border-left: 4px solid #2196F3;
-            font-style: italic;
-            font-size: 9pt;
-        }
-        .notes {
-            margin-top: 20px;
-            padding: 12px;
-            background-color: #fffbf0;
-            border: 1px solid #ffe0b2;
-            font-size: 9pt;
-        }
-        .terms {
-            margin-top: 20px;
-            padding: 12px;
-            background-color: #f5f5f5;
-            border: 1px solid #ddd;
-            font-size: 9pt;
-        }
-        .signature-section {
-            margin-top: 30px;
-            display: table;
-            width: 100%;
-        }
-        .signature-box {
-            display: table-cell;
-            width: 45%;
-            padding: 15px;
-            border: 1px solid #ddd;
-            text-align: center;
-        }
-        .signature-box.right {
-            margin-left: 10%;
-        }
-        .signature-label {
-            font-size: 9pt;
-            color: #666;
-            margin-bottom: 50px;
-        }
-        .signature-line {
-            border-top: 1px solid #333;
-            padding-top: 5px;
-            font-size: 8pt;
-        }
-        .status-badge {
-            display: inline-block;
-            padding: 5px 15px;
-            border-radius: 4px;
-            font-size: 10pt;
-            font-weight: bold;
-            margin-top: 10px;
-        }
-        .status-accepted {
-            background-color: #4caf50;
-            color: white;
-        }
-        .status-rejected {
-            background-color: #f44336;
-            color: white;
-        }
-        .status-converted {
-            background-color: #9c27b0;
-            color: white;
-        }
-        .footer {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            padding: 10px 1.5cm;
-            border-top: 1px solid #ddd;
-            font-size: 8pt;
-            color: #999;
-        }
-        .footer-content {
-            display: table;
-            width: 100%;
-        }
-        .footer-left, .footer-right {
-            display: table-cell;
-        }
-        .footer-right {
-            text-align: right;
-        }
-        .watermark {
-            position: fixed;
-            top: 45%;
-            left: 25%;
-            font-size: 80pt;
-            color: rgba(0, 0, 0, 0.04);
-            transform: rotate(-45deg);
-            z-index: -1;
-        }
+        body { font-family: 'DejaVu Sans', Arial, sans-serif; font-size: 10pt; line-height: 1.4; color: #333; margin: 0; padding: 0; }
+
+        .page-header { position: fixed; top: -{{ $mT }}cm; left: -1.5cm; right: -1.5cm; height: {{ $hH }}cm; padding: 10px 1.5cm 8px 1.5cm; }
+        .page-footer { position: fixed; bottom: -{{ $mB }}cm; left: -1.5cm; right: -1.5cm; height: {{ $fH }}cm; border-top: 1px solid #ddd; padding: 6px 1.5cm 0 1.5cm; font-size: 8pt; color: #999; }
+        .logo { max-width: 150px; max-height: 60px; }
+        .company-info { font-size: 8pt; color: #666; margin-top: 4px; }
+
+        .doc-title { font-size: 28pt; font-weight: bold; color: #2196F3; margin-bottom: 3px; }
+        .doc-number { font-size: 11pt; color: #666; }
+        .info-section { display: table; width: 100%; margin-bottom: 15px; }
+        .info-box { display: table-cell; width: 50%; vertical-align: top; padding: 10px; line-height: 1.3; }
+        .info-box.client { background-color: #e3f2fd; border-left: 4px solid #2196F3; }
+        .info-label { font-size: 8pt; color: #999; text-transform: uppercase; margin-bottom: 2px; }
+        .info-value { font-size: 10pt; margin-bottom: 2px; }
+        .info-value.highlight { font-weight: bold; font-size: 11pt; }
+
+        table.items { width: 100%; border-collapse: collapse; margin: 10px 0; }
+        table.items thead { background-color: #1976D2; color: white; }
+        table.items th { padding: 10px 8px; text-align: left; font-size: 9pt; font-weight: bold; }
+        table.items th.right { text-align: right; }
+        table.items th.center { text-align: center; }
+        table.items td { padding: 8px; border-bottom: 1px solid #e0e0e0; font-size: 9pt; }
+        table.items td.right { text-align: right; }
+        table.items td.center { text-align: center; }
+        table.items tbody tr:nth-child(even) { background-color: #fafafa; }
+
+        .totals { width: 45%; margin-left: auto; margin-top: 15px; }
+        .totals-row { display: table; width: 100%; padding: 5px 0; }
+        .totals-label, .totals-value { display: table-cell; }
+        .totals-label { text-align: right; padding-right: 15px; color: #666; }
+        .totals-value { text-align: right; width: 120px; }
+        .totals-row.grand { border-top: 2px solid #1976D2; margin-top: 8px; padding-top: 8px; font-size: 12pt; font-weight: bold; color: #2196F3; white-space: nowrap; }
+
+        .amount-words { margin-top: 15px; font-size: 9pt; }
+        .notes { margin-top: 15px; padding: 12px; background-color: #fffbf0; border: 1px solid #ffe0b2; font-size: 9pt; }
+        .watermark { position: fixed; top: 45%; left: 25%; font-size: 80pt; color: rgba(0,0,0,0.04); transform: rotate(-45deg); z-index: -1; }
+
+        @include('pdf.partials._dynamic-styles')
     </style>
 </head>
 <body>
+    @if(isset($style) && $style->background_image)
+        <div class="bg-overlay"></div>
+    @endif
+
     @if($quote->status === 'draft')
         <div class="watermark">BROUILLON</div>
     @elseif($quote->status === 'expired' || ($quote->valid_until && $quote->valid_until->isPast()))
-        <div class="watermark">EXPIRÉ</div>
+        <div class="watermark">EXPIRE</div>
     @endif
 
-    {{-- Header --}}
-    <div class="header">
-        <div class="header-left">
-            @if($company->logo_path)
-                <img src="{{ public_path('storage/' . $company->logo_path) }}" alt="{{ $company->name }}" class="logo">
-            @endif
-            <div class="company-info">
-                <strong>{{ $company->name }}</strong><br>
-                @if($company->legal_name){{ $company->legal_name }}<br>@endif
-                {{ $company->address }}<br>
-                {{ $company->postal_code }} {{ $company->city }}<br>
-                @if($company->phone)Tél: {{ $company->phone }}<br>@endif
-                @if($company->email){{ $company->email }}<br>@endif
-                @if($company->tax_id)N° Fiscal: {{ $company->tax_id }}@endif
-            </div>
-        </div>
-        <div class="header-right">
-            <div class="doc-title">DEVIS</div>
-            <div class="doc-number">N° {{ $quote->quote_number }}</div>
-            @if($quote->status === 'accepted')
-                <div class="status-badge status-accepted">✓ ACCEPTÉ</div>
-            @elseif($quote->status === 'rejected')
-                <div class="status-badge status-rejected">✗ REFUSÉ</div>
-            @elseif($quote->status === 'converted')
-                <div class="status-badge status-converted">→ FACTURÉ</div>
-            @endif
-        </div>
-    </div>
+    {{-- EN-TETE REPETE --}}
+    @include('pdf.partials._block-header')
 
-    {{-- Info Section --}}
+    {{-- PIED DE PAGE REPETE --}}
+    @include('pdf.partials._block-footer', ['footerRight' => 'Devis N ' . $quote->quote_number])
+
+    {{-- ===== CORPS ===== --}}
+
+    {{-- Bloc titre + dates + client --}}
     <div class="info-section">
         <div class="info-box client">
             <div class="info-label">Destinataire</div>
             <div class="info-value highlight">{{ $quote->client_name }}</div>
-            @if($quote->client_address)
-                <div class="info-value">{{ $quote->client_address }}</div>
-            @endif
-            @if($quote->client_email)
-                <div class="info-value">{{ $quote->client_email }}</div>
-            @endif
-            @if($quote->client_phone)
-                <div class="info-value">{{ $quote->client_phone }}</div>
-            @endif
+            @if($quote->client_address)<div class="info-value">{{ $quote->client_address }}</div>@endif
+            @if($quote->client_email)<div class="info-value">{{ $quote->client_email }}</div>@endif
+            @if($quote->client_phone)<div class="info-value">{{ $quote->client_phone }}</div>@endif
         </div>
-        <div class="info-box" style="text-align: right;">
-            <div class="info-label">Date du devis</div>
-            <div class="info-value highlight">{{ $quote->quote_date->format('d/m/Y') }}</div>
-            
-            @if($quote->valid_until)
-            <div class="validity-box {{ $quote->valid_until->isPast() ? 'expired' : '' }}">
-                <div class="info-label">Valide jusqu'au</div>
-                <div class="info-value highlight">{{ $quote->valid_until->format('d/m/Y') }}</div>
-                @if($quote->valid_until->isPast())
-                    <small style="color: #f44336;">⚠ Ce devis a expiré</small>
-                @elseif($quote->valid_until->diffInDays(now()) <= 7)
-                    <small style="color: #ff9800;">Expire dans {{ $quote->valid_until->diffInDays(now()) }} jour(s)</small>
-                @endif
+        <div class="info-box" style="text-align: right; line-height: 1.3;">
+            <div class="doc-title">DEVIS</div>
+            <div class="doc-number">N {{ $quote->quote_number }}</div>
+
+            <div style="display: table; width: 100%; margin-top: 10px;">
+                <div style="display: table-row;">
+                    <div style="display: table-cell; text-align: right; padding-right: 10px;">
+                        <div class="info-label">Date du devis</div>
+                        <div class="info-value highlight">{{ $quote->quote_date->format('d/m/Y') }}</div>
+                    </div>
+                    @if($quote->valid_until)
+                    <div style="display: table-cell; text-align: right;">
+                        <div class="info-label">Valide jusqu'au</div>
+                        <div class="info-value highlight" style="{{ $quote->valid_until->isPast() ? 'color:#d32f2f;' : '' }}">{{ $quote->valid_until->format('d/m/Y') }}</div>
+                    </div>
+                    @endif
+                </div>
             </div>
-            @endif
         </div>
     </div>
 
-    {{-- Items Table --}}
+    @include('pdf.partials._subject-block', ['document' => $quote])
+
     @php $hasLineDisc = $quote->items->where('discount_amount', '>', 0)->isNotEmpty(); @endphp
     <table class="items">
         <thead>
             <tr>
-                <th style="width: 5%;">#</th>
-                <th style="width: {{ $hasLineDisc ? '33%' : '40%' }};">Description</th>
-                <th class="center" style="width: 10%;">Type</th>
-                <th class="center" style="width: 8%;">Qté</th>
-                <th class="right" style="width: 12%;">P.U. HT</th>
-                @if($hasLineDisc)
-                <th class="right" style="width: 14%;">Remise</th>
-                @endif
-                <th class="right" style="width: 18%;">Total HT</th>
+                <th style="width:5%;">#</th>
+                <th style="width:{{ $hasLineDisc ? '43%' : '55%' }};">Description</th>
+                <th class="center" style="width:10%;">Qte</th>
+                <th class="right" style="width:12%;">P.U. HT</th>
+                @if($hasLineDisc)<th class="right" style="width:12%;">Remise</th>@endif
+                <th class="right" style="width:18%;">Total HT</th>
             </tr>
         </thead>
         <tbody>
@@ -359,20 +126,11 @@
             <tr>
                 <td>{{ $index + 1 }}</td>
                 <td>{{ $item->description }}</td>
-                <td class="center">
-                    <span class="type-badge {{ $item->type === 'product' ? 'product' : '' }}">
-                        {{ $item->type === 'service' ? 'Service' : 'Produit' }}
-                    </span>
-                </td>
                 <td class="center">{{ number_format($item->quantity, 2, ',', ' ') }}</td>
                 <td class="right">{{ number_format($item->unit_price, 0, ',', ' ') }}</td>
                 @if($hasLineDisc)
                 <td class="right" style="color:#c62828;">
-                    @if($item->discount_amount > 0)
-                        −{{ number_format($item->discount_amount, 0, ',', ' ') }}
-                    @else
-                        —
-                    @endif
+                    @if($item->discount_amount > 0)−{{ number_format($item->discount_amount, 0, ',', ' ') }}@else —@endif
                 </td>
                 @endif
                 <td class="right"><strong>{{ number_format($item->total, 0, ',', ' ') }}</strong></td>
@@ -381,7 +139,6 @@
         </tbody>
     </table>
 
-    {{-- Totals --}}
     <div class="totals">
         <div class="totals-row">
             <div class="totals-label">Sous-total HT</div>
@@ -389,11 +146,7 @@
         </div>
         @if($quote->discount_amount > 0)
         <div class="totals-row">
-            <div class="totals-label">
-                Remise
-                @if($quote->promo_code) ({{ $quote->promo_code }})@endif
-                @if($quote->discount_type === 'percent') ({{ $quote->discount_value }}%)@endif
-            </div>
+            <div class="totals-label">Remise @if($quote->promo_code)({{ $quote->promo_code }})@endif @if($quote->discount_type === 'percent')({{ $quote->discount_value }}%)@endif</div>
             <div class="totals-value" style="color:#c62828;">−{{ number_format($quote->discount_amount, 0, ',', ' ') }} FCFA</div>
         </div>
         <div class="totals-row">
@@ -413,48 +166,26 @@
         </div>
     </div>
 
-    {{-- Amount in Words --}}
+    {{-- Montant en lettres --}}
+    @php
+        $netHT = $quote->subtotal - ($quote->discount_amount ?? 0);
+    @endphp
     <div class="amount-words">
-        <strong>Montant total :</strong><br>
-        {{ $quote->total_in_words ?? number_to_words($quote->total_amount) }} francs CFA
+        Arrete le present devis a la somme de <strong>{{ number_to_words($netHT) }} francs CFA</strong> Hors Taxes et de <strong>{{ $quote->total_in_words ?? number_to_words($quote->total_amount) }} francs CFA</strong> Toutes Taxes Comprises.
     </div>
 
-    {{-- Notes --}}
     @if($quote->notes)
-        <div class="notes">
-            <strong>Notes :</strong><br>
-            {{ $quote->notes }}
-        </div>
+        <div class="notes"><strong>Notes :</strong><br>{{ $quote->notes }}</div>
     @endif
 
-    {{-- Terms --}}
-    <div class="terms">
-        <strong>Conditions :</strong><br>
-        {{ $quote->terms ?? 'Devis valable 30 jours à compter de sa date d\'émission. Prix exprimés en Francs CFA, toutes taxes comprises.' }}
-    </div>
+    {{-- Conditions de vente --}}
+    @include('pdf.partials._sales-conditions', ['document' => $quote])
 
-    {{-- Signature Section --}}
-    <div class="signature-section">
-        <div class="signature-box">
-            <div class="signature-label">Signature du fournisseur</div>
-            <div class="signature-line">{{ $company->name }}</div>
-        </div>
-        <div class="signature-box right">
-            <div class="signature-label">Bon pour accord - Signature du client</div>
-            <div class="signature-line">Date :</div>
-        </div>
-    </div>
-
-    {{-- Footer --}}
-    <div class="footer">
-        <div class="footer-content">
-            <div class="footer-left">
-                {{ $company->name }} - Document généré le {{ now()->format('d/m/Y à H:i') }}
-            </div>
-            <div class="footer-right">
-                Devis N° {{ $quote->quote_number }} - Page 1/1
-            </div>
-        </div>
-    </div>
+    {{-- Signatures --}}
+    @include('pdf.partials._signature-section', [
+        'company' => $company,
+        'withSignature' => $withSignature ?? false,
+        'clientLabel' => $quote->client->company_name ?? $quote->client_name ?? '........................',
+    ])
 </body>
 </html>

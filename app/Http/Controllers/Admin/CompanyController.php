@@ -68,6 +68,11 @@ class CompanyController extends Controller
             $data['logo_path'] = $request->file('logo')->store('logos', 'public');
         }
 
+        // Upload signature
+        if ($request->hasFile('signature')) {
+            $data['signature_image'] = $request->file('signature')->store('signatures', 'public');
+        }
+
         $company = Company::create($data);
 
         return redirect()
@@ -124,6 +129,20 @@ class CompanyController extends Controller
         if ($request->boolean('remove_logo') && $company->logo_path) {
             Storage::disk('public')->delete($company->logo_path);
             $data['logo_path'] = null;
+        }
+
+        // Upload signature
+        if ($request->hasFile('signature')) {
+            if ($company->signature_image) {
+                Storage::disk('public')->delete($company->signature_image);
+            }
+            $data['signature_image'] = $request->file('signature')->store('signatures', 'public');
+        }
+
+        // Supprimer la signature si demandé
+        if ($request->boolean('remove_signature') && $company->signature_image) {
+            Storage::disk('public')->delete($company->signature_image);
+            $data['signature_image'] = null;
         }
 
         $company->update($data);
@@ -199,8 +218,22 @@ class CompanyController extends Controller
             $data['logo_path'] = $request->file('logo')->store('logos', 'public');
         }
 
+        // Upload signature
+        if ($request->hasFile('signature')) {
+            if ($company->signature_image) {
+                Storage::disk('public')->delete($company->signature_image);
+            }
+            $data['signature_image'] = $request->file('signature')->store('signatures', 'public');
+        }
+
+        // Supprimer la signature si demandé
+        if ($request->boolean('remove_signature') && $company->signature_image) {
+            Storage::disk('public')->delete($company->signature_image);
+            $data['signature_image'] = null;
+        }
+
         // Supprimer les champs non-colonnes avant mise à jour
-        unset($data['logo'], $data['remove_logo']);
+        unset($data['logo'], $data['remove_logo'], $data['signature'], $data['remove_signature']);
 
         $company->update($data);
 

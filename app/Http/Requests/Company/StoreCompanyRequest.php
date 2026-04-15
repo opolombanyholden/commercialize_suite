@@ -27,6 +27,7 @@ class StoreCompanyRequest extends FormRequest
             'timezone' => ['required', 'string', 'max:50'],
             'logo' => ['nullable', 'image', 'max:2048'],
             'is_active' => ['boolean'],
+            'sales_conditions' => ['nullable', 'string', 'max:5000'],
         ];
     }
 }
