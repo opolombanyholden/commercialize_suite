@@ -134,9 +134,13 @@
                     <tr>
                         <td class="text-muted small">{{ $movement->created_at->format('d/m/Y H:i') }}</td>
                         <td>
-                            <a href="{{ route('products.show', $movement->product) }}" class="text-decoration-none">
-                                {{ $movement->product->name }}
-                            </a>
+                            @if($movement->product)
+                                <a href="{{ route('products.show', $movement->product) }}" class="text-decoration-none">
+                                    {{ $movement->product->name }}
+                                </a>
+                            @else
+                                <span class="text-muted fst-italic">Produit supprimé</span>
+                            @endif
                         </td>
                         <td>
                             <span class="badge bg-{{ \App\Models\StockMovement::typeBadgeClass($movement->type) }}">

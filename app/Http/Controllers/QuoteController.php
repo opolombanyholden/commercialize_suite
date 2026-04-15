@@ -118,6 +118,7 @@ class QuoteController extends Controller
             'valid_until' => $data['valid_until'] ?? null,
             'notes' => $data['notes'] ?? null,
             'terms' => $data['terms'] ?? null,
+            'subject' => $data['subject'] ?? null,
             'status' => 'draft',
         ]);
 
@@ -239,6 +240,7 @@ class QuoteController extends Controller
             'valid_until' => $data['valid_until'] ?? null,
             'notes' => $data['notes'] ?? null,
             'terms' => $data['terms'] ?? null,
+            'subject' => $data['subject'] ?? null,
         ]);
 
         // Supprimer les anciens items et taxes
@@ -317,7 +319,7 @@ class QuoteController extends Controller
     /**
      * Générer le PDF
      */
-    public function pdf(Quote $quote)
+    public function pdf(Request $request, Quote $quote)
     {
         $this->authorize('view', $quote);
 
@@ -325,7 +327,12 @@ class QuoteController extends Controller
 
         return $this->pdfService->download(
             'pdf.quote',
-            ['quote' => $quote, 'company' => $quote->company],
+            [
+                'quote' => $quote,
+                'company' => $quote->company,
+                'style' => \App\Models\DocumentStyle::forDocument($quote->company_id, 'quote'),
+                'withSignature' => $request->boolean('signature'),
+            ],
             'devis-' . $quote->quote_number . '.pdf'
         );
     }

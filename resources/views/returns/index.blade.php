@@ -7,7 +7,14 @@
 @endsection
 
 @section('page-header')
-<h1 class="page-title mb-0">Retours clients</h1>
+<div class="d-flex justify-content-between align-items-center">
+    <h1 class="page-title mb-0">Retours clients</h1>
+    @role('company_admin')
+    <a href="{{ route('returns.trash') }}" class="btn btn-outline-danger">
+        <i class="fas fa-trash-alt me-1"></i>Corbeille
+    </a>
+    @endrole
+</div>
 @endsection
 
 @section('content')

@@ -161,9 +161,16 @@
             </div>
             <div class="card-body">
                 <div class="d-grid gap-2">
-                    <a href="{{ route('quotes.pdf', $quote) }}" class="btn btn-primary" target="_blank">
-                        <i class="fas fa-file-pdf me-2"></i>Télécharger PDF
-                    </a>
+                    <div class="btn-group w-100" role="group">
+                        <a href="{{ route('quotes.pdf', $quote) }}" class="btn btn-primary" target="_blank">
+                            <i class="fas fa-file-pdf me-2"></i>PDF
+                        </a>
+                        @if($quote->company->signature_image)
+                        <a href="{{ route('quotes.pdf', [$quote, 'signature' => 1]) }}" class="btn btn-outline-primary" target="_blank" title="PDF avec signature numérisée">
+                            <i class="fas fa-signature"></i>
+                        </a>
+                        @endif
+                    </div>
                     
                     @if($quote->client_email)
                     <button type="button" class="btn btn-outline-primary">

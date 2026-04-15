@@ -168,7 +168,8 @@ a:hover { color: var(--primary-hover); }
 
 .nav-item { margin-bottom: 1px; }
 
-.nav-link,
+.admin-sidebar .nav-link,
+.sidebar .nav-link,
 .sidebar-link {
     display: flex;
     align-items: center;
@@ -180,14 +181,16 @@ a:hover { color: var(--primary-hover); }
     font-weight: 500;
 }
 
-.nav-link:hover,
+.admin-sidebar .nav-link:hover,
+.sidebar .nav-link:hover,
 .sidebar-link:hover {
     color: white;
     background: rgba(255,255,255,0.07);
     border-left-color: var(--primary-light);
 }
 
-.nav-link.active,
+.admin-sidebar .nav-link.active,
+.sidebar .nav-link.active,
 .sidebar-link.active {
     color: white;
     background: rgba(233, 30, 140, 0.18);
@@ -621,4 +624,25 @@ a:hover { color: var(--primary-hover); }
     .main-content,
     .admin-main { margin-left: 0 !important; }
     .card { box-shadow: none !important; border: 1px solid #ddd !important; }
+}
+
+/* ── Sortable Table Headers ── */
+.sortable-th {
+    white-space: nowrap;
+    user-select: none;
+    transition: color 0.15s ease;
+}
+.sortable-th:hover {
+    color: var(--primary-color) !important;
+}
+.sortable-th:hover .sort-icon .fa-sort {
+    opacity: 0.6 !important;
+}
+.sortable-th.active {
+    color: var(--primary-color) !important;
+    font-weight: 600;
+}
+.sort-icon {
+    font-size: 0.75rem;
+    line-height: 1;
 }

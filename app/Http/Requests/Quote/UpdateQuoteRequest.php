@@ -22,6 +22,7 @@ class UpdateQuoteRequest extends FormRequest
             'status' => ['nullable', 'in:draft,sent,accepted,declined'],
             'notes' => ['nullable', 'string'],
             'terms' => ['nullable', 'string'],
+            'subject' => ['nullable', 'string', 'max:500'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.product_id' => ['nullable', 'exists:products,id'],
             'items.*.description' => ['required', 'string', 'max:500'],

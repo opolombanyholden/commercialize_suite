@@ -18,15 +18,27 @@
             @endif
         </div>
     </div>
-    @if($session->isEditable())
-    <form action="{{ route('inventory.sessions.complete', $session) }}" method="POST">
-        @csrf
-        <button type="submit" class="btn btn-success"
-                onclick="return confirm('Clôturer cet inventaire ? Les stocks seront mis à jour automatiquement.')">
-            <i class="fas fa-check-circle me-2"></i>Clôturer l'inventaire
-        </button>
-    </form>
-    @endif
+    <div class="d-flex gap-2">
+        @if($session->isEditable())
+        <form action="{{ route('inventory.sessions.complete', $session) }}" method="POST">
+            @csrf
+            <button type="submit" class="btn btn-success"
+                    onclick="return confirm('Clôturer cet inventaire ? Les stocks seront mis à jour automatiquement.')">
+                <i class="fas fa-check-circle me-2"></i>Clôturer l'inventaire
+            </button>
+        </form>
+        @endif
+        @role('company_admin')
+        <form action="{{ route('inventory.sessions.destroy', $session) }}" method="POST"
+              onsubmit="return confirm('Mettre cet inventaire en corbeille ?')">
+            @csrf
+            @method('DELETE')
+            <button type="submit" class="btn btn-outline-danger">
+                <i class="fas fa-trash me-1"></i>Supprimer
+            </button>
+        </form>
+        @endrole
+    </div>
 </div>
 @endsection
 
@@ -133,18 +145,22 @@
                         $counted = ($line->good_quantity ?? 0) + ($line->damaged_quantity ?? 0);
                         $discrepancy = $line->isCounted() ? ($counted - $line->expected_quantity) : null;
                     @endphp
-                    <tr class="inventory-row {{ $line->isCounted() ? 'table-light' : '' }}" data-name="{{ strtolower($line->product->name) }}">
+                    <tr class="inventory-row {{ $line->isCounted() ? 'table-light' : '' }}" data-name="{{ strtolower($line->product?->name ?? '') }}">
                         <td>
-                            <a href="{{ route('products.show', $line->product) }}" class="fw-semibold text-dark text-decoration-none">
-                                {{ $line->product->name }}
-                            </a>
+                            @if($line->product)
+                                <a href="{{ route('products.show', $line->product) }}" class="fw-semibold text-dark text-decoration-none">
+                                    {{ $line->product->name }}
+                                </a>
+                            @else
+                                <span class="text-muted fst-italic">Produit supprimé</span>
+                            @endif
                             @if(!$line->isCounted() && $session->isEditable())
                                 <span class="badge bg-warning text-dark ms-1 small">À compter</span>
                             @elseif($line->isCounted())
                                 <span class="badge bg-success ms-1 small"><i class="fas fa-check"></i></span>
                             @endif
                         </td>
-                        <td class="text-muted small"><code>{{ $line->product->sku ?? '—' }}</code></td>
+                        <td class="text-muted small"><code>{{ $line->product?->sku ?? '—' }}</code></td>
                         <td class="text-center">{{ $line->expected_quantity }}</td>
 
                         @if($session->isEditable())

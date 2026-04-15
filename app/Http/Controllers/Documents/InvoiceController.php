@@ -11,6 +11,7 @@ use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\Product;
 use App\Models\Promotion;
+use App\Models\StockMovement;
 use App\Models\Site;
 use App\Models\Tax;
 use App\Services\PdfService;
@@ -80,7 +81,13 @@ class InvoiceController extends Controller
             $query->whereDate('invoice_date', '<=', $to);
         }
 
-        $invoices = $query->latest('invoice_date')->paginate(15)->withQueryString();
+        // Tri dynamique (par défaut : numéro de facture décroissant)
+        $sortable = ['invoice_number', 'client_name', 'invoice_date', 'due_date', 'total_amount', 'status'];
+        $sort = in_array($request->input('sort'), $sortable) ? $request->input('sort') : 'invoice_number';
+        $direction = $request->input('direction') === 'asc' ? 'asc' : 'desc';
+        $query->orderBy($sort, $direction);
+
+        $invoices = $query->paginate(15)->withQueryString();
 
         // Statistiques (factures uniquement, pas les avoirs)
         $baseStats = Invoice::where('company_id', $companyId)->invoicesOnly();
@@ -171,7 +178,14 @@ class InvoiceController extends Controller
                 'promo_code'     => $promoModel ? $promoModel->code : null,
                 'notes'          => $request->notes,
                 'terms'          => $request->terms,
+                'subject'        => $request->subject,
             ];
+
+            // Code secret de livraison (optionnel, à la création)
+            if ($request->boolean('generate_delivery_pin')) {
+                $invoiceData['delivery_pin']              = Invoice::generateDeliveryPin();
+                $invoiceData['delivery_pin_generated_at'] = now();
+            }
 
             if ($client = Client::find($request->client_id)) {
                 $invoiceData = array_merge($invoiceData, [
@@ -276,9 +290,27 @@ class InvoiceController extends Controller
                         'quantity'    => $item->quantity,
                         'sort_order'  => $idx,
                     ]);
-                    // Décrémenter le stock pour les produits trackés
+                    // Décrémenter le stock et enregistrer le mouvement
                     if ($item->product_id && $item->type === 'product') {
-                        Product::find($item->product_id)?->decrementStock($item->quantity);
+                        $product = Product::find($item->product_id);
+                        if ($product && $product->track_inventory) {
+                            $stockBefore = $product->stock_quantity;
+                            $product->decrementStock($item->quantity);
+                            $product->refresh();
+
+                            StockMovement::create([
+                                'company_id'   => $user->company_id,
+                                'product_id'   => $product->id,
+                                'site_id'      => $invoice->site_id,
+                                'user_id'      => $user->id,
+                                'type'         => 'sale',
+                                'quantity'     => -abs((int) $item->quantity),
+                                'stock_before' => $stockBefore,
+                                'stock_after'  => $product->stock_quantity,
+                                'reference'    => $dn->delivery_number,
+                                'reason'       => 'Livraison immédiate',
+                            ]);
+                        }
                     }
                 }
             }
@@ -390,6 +422,7 @@ class InvoiceController extends Controller
                 'promo_code'     => $promoModel ? $promoModel->code : null,
                 'notes'          => $request->notes,
                 'terms'          => $request->terms,
+                'subject'        => $request->subject,
             ]);
 
             if ($client = Client::find($request->client_id)) {
@@ -467,25 +500,65 @@ class InvoiceController extends Controller
     }
 
     /**
-     * Supprimer une facture
+     * Mettre en corbeille une facture
      */
     public function destroy(Request $request, Invoice $invoice): RedirectResponse
     {
         $this->authorizeCompany($request, $invoice);
 
-        if ($invoice->status !== 'draft') {
-            return back()->with('error', 'Seules les factures en brouillon peuvent être supprimées.');
-        }
-
-        if ($invoice->payments()->exists()) {
-            return back()->with('error', 'Impossible de supprimer une facture avec des paiements.');
+        // Super admin peut tout mettre en corbeille
+        if (!$request->user()->hasRole('company_admin')) {
+            if ($invoice->status !== 'draft') {
+                return back()->with('error', 'Seules les factures en brouillon peuvent être supprimées.');
+            }
+            if ($invoice->payments()->exists()) {
+                return back()->with('error', 'Impossible de supprimer une facture avec des paiements.');
+            }
         }
 
         $invoice->delete();
 
         return redirect()
             ->route('invoices.index')
-            ->with('success', 'Facture supprimée avec succès.');
+            ->with('success', 'Facture mise en corbeille.');
+    }
+
+    /**
+     * Corbeille des factures
+     */
+    public function trash(Request $request): View
+    {
+        $companyId = $request->user()->company_id;
+
+        $invoices = Invoice::onlyTrashed()
+            ->where('company_id', $companyId)
+            ->with(['client', 'user'])
+            ->latest('deleted_at')
+            ->paginate(15);
+
+        return view('invoices.trash', compact('invoices'));
+    }
+
+    /**
+     * Restaurer une facture
+     */
+    public function restore(Request $request, int $id): RedirectResponse
+    {
+        $invoice = Invoice::onlyTrashed()->where('company_id', $request->user()->company_id)->findOrFail($id);
+        $invoice->restore();
+
+        return redirect()->route('invoices.trash')->with('success', 'Facture restaurée avec succès.');
+    }
+
+    /**
+     * Supprimer définitivement une facture
+     */
+    public function forceDelete(Request $request, int $id): RedirectResponse
+    {
+        $invoice = Invoice::onlyTrashed()->where('company_id', $request->user()->company_id)->findOrFail($id);
+        $invoice->forceDelete();
+
+        return redirect()->route('invoices.trash')->with('success', 'Facture supprimée définitivement.');
     }
 
     /**
@@ -499,7 +572,11 @@ class InvoiceController extends Controller
 
         return $pdfService->download(
             'pdf.invoice',
-            ['invoice' => $invoice, 'company' => $invoice->company],
+            [
+                'invoice' => $invoice,
+                'company' => $invoice->company,
+                'style' => \App\Models\DocumentStyle::forDocument($invoice->company_id, 'invoice'),
+            ],
             'facture-' . $invoice->invoice_number . '.pdf'
         );
     }
@@ -587,30 +664,73 @@ class InvoiceController extends Controller
     {
         $this->authorizeCompany($request, $invoice);
 
-        $request->validate(['status' => ['required', 'in:draft,sent,paid,partial,cancelled']]);
+        $rules = ['status' => ['required', 'in:draft,sent,paid,partial,cancelled']];
 
         $newStatus = $request->status;
+
+        // Validation supplémentaire pour les statuts de paiement
+        if ($newStatus === 'partial') {
+            $rules['payment_amount'] = ['required', 'numeric', 'min:1', 'max:' . $invoice->balance];
+        }
+        if (in_array($newStatus, ['paid', 'partial'])) {
+            $rules['payment_method'] = ['required', 'in:cash,check,bank_transfer,credit_card,mobile_money,other'];
+        }
+
+        $request->validate($rules, [
+            'payment_amount.required' => 'Le montant du paiement est requis.',
+            'payment_amount.max'      => 'Le montant ne peut pas dépasser le solde restant (' . format_currency($invoice->balance) . ').',
+            'payment_method.required' => 'Le mode de paiement est requis.',
+        ]);
+
         $updateData = ['status' => $newStatus];
 
         if ($newStatus === 'sent' && !$invoice->sent_at) {
             $updateData['sent_at'] = now();
         }
 
-        if ($newStatus === 'paid') {
-            $updateData['payment_status'] = 'paid';
-            $updateData['paid_amount']    = $invoice->total_amount;
-            $updateData['balance']        = 0;
-            $updateData['paid_at']        = now();
+        // Statuts de paiement : créer un vrai enregistrement Payment
+        if ($newStatus === 'paid' && $invoice->balance > 0) {
+            $user = $request->user();
+            Payment::create([
+                'company_id'     => $user->company_id,
+                'invoice_id'     => $invoice->id,
+                'user_id'        => $user->id,
+                'site_id'        => $invoice->site_id ?? $user->getPrimarySite()?->id,
+                'amount'         => $invoice->balance,
+                'payment_date'   => now(),
+                'payment_method' => $request->payment_method,
+                'reference'      => null,
+                'notes'          => 'Paiement total via changement de statut',
+                'is_confirmed'   => true,
+                'confirmed_at'   => now(),
+                'confirmed_by'   => $user->id,
+            ]);
+            // Le modèle Payment met à jour automatiquement la facture via recordPayment()
+
+            return back()->with('success', 'Facture marquée comme payée. Paiement de ' . format_currency($invoice->balance) . ' enregistré.');
         }
 
         if ($newStatus === 'partial') {
-            $updateData['payment_status'] = 'partial';
-            // Rétablir le statut fonctionnel si nécessaire
-            if (in_array($invoice->status, ['draft', 'paid', 'cancelled'])) {
-                $updateData['status'] = 'sent';
-            } else {
-                unset($updateData['status']);
-            }
+            $user = $request->user();
+            $amount = $request->payment_amount;
+
+            Payment::create([
+                'company_id'     => $user->company_id,
+                'invoice_id'     => $invoice->id,
+                'user_id'        => $user->id,
+                'site_id'        => $invoice->site_id ?? $user->getPrimarySite()?->id,
+                'amount'         => $amount,
+                'payment_date'   => now(),
+                'payment_method' => $request->payment_method,
+                'reference'      => null,
+                'notes'          => 'Paiement partiel via changement de statut',
+                'is_confirmed'   => true,
+                'confirmed_at'   => now(),
+                'confirmed_by'   => $user->id,
+            ]);
+            // Le modèle Payment met à jour automatiquement la facture via recordPayment()
+
+            return back()->with('success', 'Paiement partiel de ' . format_currency($amount) . ' enregistré.');
         }
 
         $invoice->update($updateData);
@@ -618,8 +738,6 @@ class InvoiceController extends Controller
         $labels = [
             'draft'     => 'Brouillon',
             'sent'      => 'Envoyée',
-            'paid'      => 'Payée',
-            'partial'   => 'Paiement partiel',
             'cancelled' => 'Annulée',
         ];
 

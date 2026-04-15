@@ -8,6 +8,7 @@ use App\Models\Site;
 use App\Models\StockMovement;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 
 class StockMovementController extends Controller
@@ -63,7 +64,12 @@ class StockMovementController extends Controller
     {
         $companyId = $request->user()->company_id;
 
-        $products   = Product::where('company_id', $companyId)->active()->orderBy('name')->get();
+        $products   = Product::where('company_id', $companyId)
+            ->active()
+            ->where('type', 'product')
+            ->where('track_inventory', true)
+            ->orderBy('name')
+            ->get();
         $warehouses = Site::where('company_id', $companyId)->where('is_warehouse', true)->active()->orderBy('name')->get();
 
         $selectedProductId = $request->input('product_id');
@@ -83,48 +89,70 @@ class StockMovementController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $data = $request->validate([
-            'product_id' => ['required', 'exists:products,id'],
-            'site_id'    => ['nullable', 'exists:sites,id'],
-            'type'       => ['required', 'in:in,out,adjustment,loss,return'],
-            'quantity'   => ['required', 'integer', 'min:1'],
-            'unit_cost'  => ['nullable', 'numeric', 'min:0'],
-            'reference'  => ['nullable', 'string', 'max:100'],
-            'reason'     => ['nullable', 'string', 'max:255'],
-            'notes'      => ['nullable', 'string'],
+            'site_id'              => ['nullable', 'exists:sites,id'],
+            'type'                 => ['required', 'in:in,out,adjustment,loss,return'],
+            'reference'            => ['nullable', 'string', 'max:100'],
+            'reason'               => ['nullable', 'string', 'max:255'],
+            'notes'                => ['nullable', 'string'],
+            'items'                => ['required', 'array', 'min:1'],
+            'items.*.product_id'   => ['required', 'distinct', 'exists:products,id'],
+            'items.*.quantity'     => ['required', 'integer', 'min:1'],
+            'items.*.unit_cost'    => ['nullable', 'numeric', 'min:0'],
+        ], [
+            'items.required'             => 'Au moins un produit est requis.',
+            'items.*.product_id.distinct' => 'Un produit ne peut apparaître qu\'une seule fois.',
         ]);
 
         $companyId = $request->user()->company_id;
-        $product   = Product::where('company_id', $companyId)->findOrFail($data['product_id']);
+        $userId    = $request->user()->id;
+        $isOut     = in_array($data['type'], ['out', 'loss']);
 
-        // Quantité négative pour les sorties
-        $qty = in_array($data['type'], ['out', 'loss'])
-            ? -abs((int) $data['quantity'])
-            : abs((int) $data['quantity']);
+        try {
+            DB::beginTransaction();
 
-        $stockBefore = $product->stock_quantity;
-        $stockAfter  = $stockBefore + $qty;
+            $count = 0;
+            foreach ($data['items'] as $item) {
+                $product = Product::where('company_id', $companyId)->findOrFail($item['product_id']);
 
-        StockMovement::create([
-            'company_id'   => $companyId,
-            'product_id'   => $product->id,
-            'site_id'      => $data['site_id'] ?? null,
-            'user_id'      => $request->user()->id,
-            'type'         => $data['type'],
-            'quantity'     => $qty,
-            'stock_before' => $stockBefore,
-            'stock_after'  => $stockAfter,
-            'unit_cost'    => $data['unit_cost'] ?? null,
-            'reference'    => $data['reference'] ?? null,
-            'reason'       => $data['reason'] ?? null,
-            'notes'        => $data['notes'] ?? null,
-        ]);
+                $qty = $isOut
+                    ? -abs((int) $item['quantity'])
+                    : abs((int) $item['quantity']);
 
-        // Mettre à jour le stock du produit
-        $product->update(['stock_quantity' => max(0, $stockAfter)]);
+                $stockBefore = $product->stock_quantity;
+                $stockAfter  = $stockBefore + $qty;
+
+                StockMovement::create([
+                    'company_id'   => $companyId,
+                    'product_id'   => $product->id,
+                    'site_id'      => $data['site_id'] ?? null,
+                    'user_id'      => $userId,
+                    'type'         => $data['type'],
+                    'quantity'     => $qty,
+                    'stock_before' => $stockBefore,
+                    'stock_after'  => $stockAfter,
+                    'unit_cost'    => $item['unit_cost'] ?? null,
+                    'reference'    => $data['reference'] ?? null,
+                    'reason'       => $data['reason'] ?? null,
+                    'notes'        => $data['notes'] ?? null,
+                ]);
+
+                $product->update(['stock_quantity' => max(0, $stockAfter)]);
+                $count++;
+            }
+
+            DB::commit();
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            return back()
+                ->withInput()
+                ->with('error', 'Erreur lors de l\'enregistrement : ' . $e->getMessage());
+        }
 
         return redirect()
             ->route('inventory.movements.index')
-            ->with('success', 'Mouvement de stock enregistré avec succès.');
+            ->with('success', $count > 1
+                ? "{$count} mouvements de stock enregistrés avec succès."
+                : 'Mouvement de stock enregistré avec succès.');
     }
 
     public function show(Request $request, StockMovement $movement): View
@@ -134,5 +162,43 @@ class StockMovementController extends Controller
         }
         $movement->load(['product', 'site', 'user']);
         return view('inventory.movements.show', compact('movement'));
+    }
+
+    public function destroy(Request $request, StockMovement $movement): RedirectResponse
+    {
+        if ($movement->company_id !== $request->user()->company_id) {
+            abort(403);
+        }
+
+        $movement->delete();
+
+        return redirect()->route('inventory.movements.index')->with('success', 'Mouvement mis en corbeille.');
+    }
+
+    public function trash(Request $request): View
+    {
+        $movements = StockMovement::onlyTrashed()
+            ->where('company_id', $request->user()->company_id)
+            ->with(['product', 'user'])
+            ->latest('deleted_at')
+            ->paginate(15);
+
+        return view('inventory.movements.trash', compact('movements'));
+    }
+
+    public function restore(Request $request, int $id): RedirectResponse
+    {
+        $m = StockMovement::onlyTrashed()->where('company_id', $request->user()->company_id)->findOrFail($id);
+        $m->restore();
+
+        return redirect()->route('inventory.movements.trash')->with('success', 'Mouvement restauré.');
+    }
+
+    public function forceDelete(Request $request, int $id): RedirectResponse
+    {
+        $m = StockMovement::onlyTrashed()->where('company_id', $request->user()->company_id)->findOrFail($id);
+        $m->forceDelete();
+
+        return redirect()->route('inventory.movements.trash')->with('success', 'Mouvement supprimé définitivement.');
     }
 }

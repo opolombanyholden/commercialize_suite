@@ -76,12 +76,12 @@
 
 {{-- Role Modal --}}
 <div class="modal fade" id="roleModal" tabindex="-1">
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content">
-            <form id="roleForm" method="POST" action="{{ route('admin.roles.store') }}">
+            <form id="roleForm" method="POST" action="{{ route('admin.roles.store') }}" style="display: contents;">
                 @csrf
-                <div id="roleMethodField"></div>
-                
+                <div id="roleMethodField" style="display: none;"></div>
+
                 <div class="modal-header">
                     <h5 class="modal-title" id="roleModalLabel"><i class="fas fa-user-shield me-2"></i>Nouveau rôle</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -89,21 +89,61 @@
                 <div class="modal-body">
                     <div class="mb-3">
                         <label for="roleName" class="form-label">Nom du rôle <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control" id="roleName" name="name" required>
+                        <input type="text" class="form-control" id="roleName" name="name" required
+                               placeholder="ex: comptable_junior">
+                        <small class="text-muted">Identifiant technique. Lettres minuscules et underscores recommandés.</small>
                     </div>
-                    <div class="mb-3">
-                        <label for="roleDescription" class="form-label">Description</label>
-                        <textarea class="form-control" id="roleDescription" name="description" rows="2"></textarea>
+
+                    <hr>
+
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <label class="form-label mb-0 fw-semibold">
+                            <i class="fas fa-key me-1 text-warning"></i>Permissions
+                        </label>
+                        <div>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="permsCheckAll">
+                                <i class="fas fa-check-double me-1"></i>Tout cocher
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="permsUncheckAll">
+                                <i class="fas fa-times me-1"></i>Tout décocher
+                            </button>
+                        </div>
                     </div>
-                    <div class="row g-3">
-                        <div class="col-md-6">
-                            <label for="roleLevel" class="form-label">Niveau (1-100)</label>
-                            <input type="number" class="form-control" id="roleLevel" name="level" min="1" max="100" value="50">
-                        </div>
-                        <div class="col-md-6">
-                            <label for="roleColor" class="form-label">Couleur</label>
-                            <input type="color" class="form-control form-control-color w-100" id="roleColor" name="color" value="#6c757d">
-                        </div>
+
+                    <div id="permissionsContainer">
+                        @foreach($allPermissions as $module => $perms)
+                            <div class="card border mb-2">
+                                <div class="card-header bg-light py-2 d-flex justify-content-between align-items-center">
+                                    <strong class="text-uppercase small">{{ $module }}</strong>
+                                    <div class="form-check form-check-inline mb-0">
+                                        <input class="form-check-input module-check" type="checkbox"
+                                               id="module-{{ $module }}" data-module="{{ $module }}">
+                                        <label class="form-check-label small text-muted" for="module-{{ $module }}">
+                                            Module entier
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="card-body py-2">
+                                    <div class="row g-2">
+                                        @foreach($perms as $permission)
+                                            <div class="col-md-6 col-lg-4">
+                                                <div class="form-check">
+                                                    <input class="form-check-input perm-check"
+                                                           type="checkbox"
+                                                           name="permissions[]"
+                                                           value="{{ $permission->id }}"
+                                                           id="perm-{{ $permission->id }}"
+                                                           data-module="{{ $module }}">
+                                                    <label class="form-check-label small" for="perm-{{ $permission->id }}">
+                                                        {{ Str::after($permission->name, '.') }}
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        @endforeach
+                                    </div>
+                                </div>
+                            </div>
+                        @endforeach
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -136,11 +176,34 @@
 const roleModal = new bootstrap.Modal(document.getElementById('roleModal'));
 const permissionsModal = new bootstrap.Modal(document.getElementById('permissionsModal'));
 
+function uncheckAllPermissions() {
+    document.querySelectorAll('#permissionsContainer .perm-check').forEach(cb => cb.checked = false);
+    document.querySelectorAll('#permissionsContainer .module-check').forEach(cb => cb.checked = false);
+}
+
+function checkPermissionsByIds(ids) {
+    const set = new Set(ids.map(String));
+    document.querySelectorAll('#permissionsContainer .perm-check').forEach(cb => {
+        cb.checked = set.has(cb.value);
+    });
+    syncModuleCheckboxes();
+}
+
+function syncModuleCheckboxes() {
+    document.querySelectorAll('#permissionsContainer .module-check').forEach(modCb => {
+        const module = modCb.dataset.module;
+        const perms = document.querySelectorAll(`#permissionsContainer .perm-check[data-module="${module}"]`);
+        const allChecked = perms.length > 0 && Array.from(perms).every(p => p.checked);
+        modCb.checked = allChecked;
+    });
+}
+
 function resetRoleForm() {
     document.getElementById('roleForm').action = '{{ route("admin.roles.store") }}';
-    document.getElementById('roleForm').reset();
+    document.getElementById('roleName').value = '';
     document.getElementById('roleModalLabel').innerHTML = '<i class="fas fa-user-shield me-2"></i>Nouveau rôle';
     document.getElementById('roleMethodField').innerHTML = '';
+    uncheckAllPermissions();
 }
 
 function editRole(role) {
@@ -148,20 +211,22 @@ function editRole(role) {
     document.getElementById('roleMethodField').innerHTML = '<input type="hidden" name="_method" value="PUT">';
     document.getElementById('roleModalLabel').innerHTML = '<i class="fas fa-edit me-2"></i>Modifier le rôle';
     document.getElementById('roleName').value = role.name || '';
-    document.getElementById('roleDescription').value = role.description || '';
-    document.getElementById('roleLevel').value = role.level || 50;
-    document.getElementById('roleColor').value = role.color || '#6c757d';
+
+    uncheckAllPermissions();
+    const permIds = (role.permissions || []).map(p => p.id);
+    checkPermissionsByIds(permIds);
+
     roleModal.show();
 }
 
 function viewPermissions(role) {
     document.getElementById('permissionsRoleName').textContent = role.name;
-    
+
     const permissions = role.permissions || [];
     let html = '';
-    
+
     if (permissions.length === 0) {
-        html = '<p class="text-muted text-center">Aucune permission spécifique (accès complet ou aucun)</p>';
+        html = '<p class="text-muted text-center">Aucune permission assignée à ce rôle.</p>';
     } else {
         const grouped = {};
         permissions.forEach(p => {
@@ -169,18 +234,39 @@ function viewPermissions(role) {
             if (!grouped[module]) grouped[module] = [];
             grouped[module].push(p.name);
         });
-        
+
         for (const [module, perms] of Object.entries(grouped)) {
-            html += `<div class="mb-3"><h6 class="text-uppercase text-muted">${module}</h6><div class="d-flex flex-wrap gap-1">`;
+            html += `<div class="mb-3"><h6 class="text-uppercase text-muted">${module} <span class="badge bg-secondary">${perms.length}</span></h6><div class="d-flex flex-wrap gap-1">`;
             perms.forEach(p => {
                 html += `<span class="badge bg-primary">${p}</span>`;
             });
             html += '</div></div>';
         }
     }
-    
+
     document.getElementById('permissionsList').innerHTML = html;
     permissionsModal.show();
 }
+
+// Cocher / décocher tout
+document.getElementById('permsCheckAll')?.addEventListener('click', function () {
+    document.querySelectorAll('#permissionsContainer .perm-check').forEach(cb => cb.checked = true);
+    syncModuleCheckboxes();
+});
+document.getElementById('permsUncheckAll')?.addEventListener('click', uncheckAllPermissions);
+
+// Cocher tout un module
+document.querySelectorAll('#permissionsContainer .module-check').forEach(modCb => {
+    modCb.addEventListener('change', function () {
+        const module = this.dataset.module;
+        document.querySelectorAll(`#permissionsContainer .perm-check[data-module="${module}"]`)
+            .forEach(cb => cb.checked = this.checked);
+    });
+});
+
+// Mettre à jour la case "module entier" quand une perm change
+document.querySelectorAll('#permissionsContainer .perm-check').forEach(cb => {
+    cb.addEventListener('change', syncModuleCheckboxes);
+});
 </script>
 @endpush

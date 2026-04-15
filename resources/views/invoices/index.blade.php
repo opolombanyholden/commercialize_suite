@@ -12,11 +12,18 @@
         <h1 class="page-title mb-1">Factures</h1>
         <p class="text-muted mb-0">{{ $invoices->total() }} facture(s) au total</p>
     </div>
-    @can('invoices.create')
-    <a href="{{ route('invoices.create') }}" class="btn btn-primary">
-        <i class="fas fa-plus me-2"></i>Nouvelle facture
-    </a>
-    @endcan
+    <div class="d-flex gap-2">
+        @role('company_admin')
+        <a href="{{ route('invoices.trash') }}" class="btn btn-outline-danger">
+            <i class="fas fa-trash-alt me-1"></i>Corbeille
+        </a>
+        @endrole
+        @can('invoices.create')
+        <a href="{{ route('invoices.create') }}" class="btn btn-primary">
+            <i class="fas fa-plus me-2"></i>Nouvelle facture
+        </a>
+        @endcan
+    </div>
 </div>
 @endsection
 
@@ -102,12 +109,12 @@
             <table class="table table-hover align-middle mb-0">
                 <thead class="table-light">
                     <tr>
-                        <th>N° Facture</th>
-                        <th>Client</th>
-                        <th>Date</th>
-                        <th>Échéance</th>
-                        <th class="text-end">Montant</th>
-                        <th class="text-center">Statut</th>
+                        <x-sortable-th column="invoice_number" label="N° Facture" />
+                        <x-sortable-th column="client_name" label="Client" />
+                        <x-sortable-th column="invoice_date" label="Date" />
+                        <x-sortable-th column="due_date" label="Échéance" />
+                        <x-sortable-th column="total_amount" label="Montant" class="text-end" />
+                        <x-sortable-th column="status" label="Statut" class="text-center" />
                         <th class="text-center">Livraison</th>
                         <th style="width: 120px;">Actions</th>
                     </tr>
@@ -179,9 +186,16 @@
                                     </li>
                                     <li>
                                         <a class="dropdown-item" href="{{ route('invoices.pdf', $invoice) }}" target="_blank">
-                                            <i class="fas fa-file-pdf me-2 text-danger"></i>Télécharger PDF
+                                            <i class="fas fa-file-pdf me-2 text-danger"></i>PDF sans signature
                                         </a>
                                     </li>
+                                    @if($invoice->company->signature_image)
+                                    <li>
+                                        <a class="dropdown-item" href="{{ route('invoices.pdf', [$invoice, 'signature' => 1]) }}" target="_blank">
+                                            <i class="fas fa-signature me-2 text-primary"></i>PDF avec signature
+                                        </a>
+                                    </li>
+                                    @endif
                                     @if($invoice->status !== 'paid' && $invoice->status !== 'cancelled')
                                         @can('payments.create')
                                         <li>

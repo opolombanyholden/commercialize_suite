@@ -12,11 +12,18 @@
         <h1 class="page-title mb-1">Bons de livraison</h1>
         <p class="text-muted mb-0">{{ $deliveries->total() }} bon(s) au total</p>
     </div>
-    @can('deliveries.create')
-    <a href="{{ route('deliveries.create') }}" class="btn btn-primary">
-        <i class="fas fa-plus me-2"></i>Nouveau bon
-    </a>
-    @endcan
+    <div class="d-flex gap-2">
+        @role('company_admin')
+        <a href="{{ route('deliveries.trash') }}" class="btn btn-outline-danger">
+            <i class="fas fa-trash-alt me-1"></i>Corbeille
+        </a>
+        @endrole
+        @can('deliveries.create')
+        <a href="{{ route('deliveries.create') }}" class="btn btn-primary">
+            <i class="fas fa-plus me-2"></i>Nouveau bon
+        </a>
+        @endcan
+    </div>
 </div>
 @endsection
 
@@ -100,12 +107,12 @@
             <table class="table table-hover align-middle mb-0">
                 <thead class="table-light">
                     <tr>
-                        <th>N° BL</th>
-                        <th>Client</th>
+                        <x-sortable-th column="delivery_number" label="N° BL" />
+                        <x-sortable-th column="client_name" label="Client" />
                         <th>Facture</th>
-                        <th>Date prévue</th>
+                        <x-sortable-th column="planned_date" label="Date prévue" />
                         <th>Livreur</th>
-                        <th class="text-center">Statut</th>
+                        <x-sortable-th column="status" label="Statut" class="text-center" />
                         <th style="width:120px;">Actions</th>
                     </tr>
                 </thead>

@@ -8,6 +8,7 @@ use App\Models\DeliveryNote;
 use App\Models\Invoice;
 use App\Models\Product;
 use App\Models\Site;
+use App\Models\StockMovement;
 use App\Services\PdfService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -58,7 +59,13 @@ class DeliveryNoteController extends Controller
             $query->whereDate('planned_date', '<=', $to);
         }
 
-        $deliveries = $query->latest('planned_date')->paginate(15)->withQueryString();
+        // Tri dynamique (par défaut : numéro de BL décroissant)
+        $sortable = ['delivery_number', 'client_name', 'planned_date', 'status'];
+        $sort = in_array($request->input('sort'), $sortable) ? $request->input('sort') : 'delivery_number';
+        $direction = $request->input('direction') === 'asc' ? 'asc' : 'desc';
+        $query->orderBy($sort, $direction);
+
+        $deliveries = $query->paginate(15)->withQueryString();
 
         $statsQuery = DeliveryNote::where('company_id', $companyId);
         if (!$user->hasAccessToAllSites()) {
@@ -175,12 +182,16 @@ class DeliveryNoteController extends Controller
             }
         }
 
+        $deliveryImmediate = $request->boolean('delivery_immediate');
+
         try {
             DB::beginTransaction();
 
+            $siteId = $request->site_id ?? $user->getPrimarySite()?->id;
+
             $dn = DeliveryNote::create([
                 'company_id'       => $user->company_id,
-                'site_id'          => $request->site_id ?? $user->getPrimarySite()?->id,
+                'site_id'          => $siteId,
                 'user_id'          => $user->id,
                 'invoice_id'       => $request->invoice_id ?: null,
                 'client_id'        => $request->client_id ?: null,
@@ -190,9 +201,10 @@ class DeliveryNoteController extends Controller
                 'client_address'   => $request->client_address,
                 'delivery_address' => $request->delivery_address ?: $request->client_address,
                 'planned_date'     => $request->planned_date,
+                'delivered_date'   => $deliveryImmediate ? now()->toDateString() : null,
                 'livreur'          => $request->livreur,
                 'notes'            => $request->notes,
-                'status'           => 'pending',
+                'status'           => $deliveryImmediate ? 'delivered' : 'pending',
             ]);
 
             foreach ($request->items as $index => $item) {
@@ -204,13 +216,22 @@ class DeliveryNoteController extends Controller
                     'notes'       => $item['notes'] ?? null,
                     'sort_order'  => $index,
                 ]);
+
+                // Décrémenter le stock si livraison immédiate
+                if ($deliveryImmediate && !empty($item['product_id'])) {
+                    $this->decrementStock($item['product_id'], (float) $item['quantity'], $user, $siteId, $dn->delivery_number);
+                }
             }
 
             DB::commit();
 
+            $msg = $deliveryImmediate
+                ? 'Bon de livraison créé et marqué comme livré. Le stock a été mis à jour.'
+                : 'Bon de livraison créé avec succès.';
+
             return redirect()
                 ->route('deliveries.show', $dn)
-                ->with('success', 'Bon de livraison créé avec succès.');
+                ->with('success', $msg);
 
         } catch (\Exception $e) {
             DB::rollBack();
@@ -363,13 +384,14 @@ class DeliveryNoteController extends Controller
     }
 
     /**
-     * Supprimer un bon de livraison
+     * Mettre en corbeille un bon de livraison
      */
     public function destroy(Request $request, DeliveryNote $delivery): RedirectResponse
     {
         $this->authorizeCompany($request, $delivery);
 
-        if ($delivery->isDelivered()) {
+        // Super admin peut tout mettre en corbeille
+        if (!$request->user()->hasRole('company_admin') && $delivery->isDelivered()) {
             return back()->with('error', 'Impossible de supprimer un bon de livraison livré.');
         }
 
@@ -377,7 +399,45 @@ class DeliveryNoteController extends Controller
 
         return redirect()
             ->route('deliveries.index')
-            ->with('success', 'Bon de livraison supprimé.');
+            ->with('success', 'Bon de livraison mis en corbeille.');
+    }
+
+    /**
+     * Corbeille des bons de livraison
+     */
+    public function trash(Request $request): View
+    {
+        $companyId = $request->user()->company_id;
+
+        $deliveries = DeliveryNote::onlyTrashed()
+            ->where('company_id', $companyId)
+            ->with(['client', 'invoice'])
+            ->latest('deleted_at')
+            ->paginate(15);
+
+        return view('deliveries.trash', compact('deliveries'));
+    }
+
+    /**
+     * Restaurer un bon de livraison
+     */
+    public function restore(Request $request, int $id): RedirectResponse
+    {
+        $dn = DeliveryNote::onlyTrashed()->where('company_id', $request->user()->company_id)->findOrFail($id);
+        $dn->restore();
+
+        return redirect()->route('deliveries.trash')->with('success', 'Bon de livraison restauré.');
+    }
+
+    /**
+     * Supprimer définitivement un bon de livraison
+     */
+    public function forceDelete(Request $request, int $id): RedirectResponse
+    {
+        $dn = DeliveryNote::onlyTrashed()->where('company_id', $request->user()->company_id)->findOrFail($id);
+        $dn->forceDelete();
+
+        return redirect()->route('deliveries.trash')->with('success', 'Bon de livraison supprimé définitivement.');
     }
 
     /**
@@ -389,10 +449,33 @@ class DeliveryNoteController extends Controller
 
         $request->validate(['status' => ['required', 'in:pending,in_transit,delivered,cancelled']]);
 
-        $updateData = ['status' => $request->status];
+        $newStatus   = $request->status;
+        $oldStatus   = $delivery->status;
+        $user        = $request->user();
+        $updateData  = ['status' => $newStatus];
 
-        if ($request->status === 'delivered' && !$delivery->delivered_date) {
+        if ($newStatus === 'delivered' && !$delivery->delivered_date) {
             $updateData['delivered_date'] = now()->toDateString();
+        }
+
+        // Passage à "livré" depuis un statut non-livré → décrémenter le stock
+        if ($newStatus === 'delivered' && $oldStatus !== 'delivered') {
+            $delivery->loadMissing('items');
+            foreach ($delivery->items as $item) {
+                if ($item->product_id) {
+                    $this->decrementStock($item->product_id, (float) $item->quantity, $user, $delivery->site_id, $delivery->delivery_number);
+                }
+            }
+        }
+
+        // Annulation d'une livraison déjà livrée → restaurer le stock
+        if ($newStatus === 'cancelled' && $oldStatus === 'delivered') {
+            $delivery->loadMissing('items');
+            foreach ($delivery->items as $item) {
+                if ($item->product_id) {
+                    $this->incrementStock($item->product_id, (float) $item->quantity, $user, $delivery->site_id, $delivery->delivery_number);
+                }
+            }
         }
 
         $delivery->update($updateData);
@@ -404,7 +487,15 @@ class DeliveryNoteController extends Controller
             'cancelled'  => 'Annulé',
         ];
 
-        return back()->with('success', 'Statut mis à jour : ' . ($labels[$request->status] ?? $request->status) . '.');
+        $msg = 'Statut mis à jour : ' . ($labels[$newStatus] ?? $newStatus) . '.';
+        if ($newStatus === 'delivered' && $oldStatus !== 'delivered') {
+            $msg .= ' Le stock a été mis à jour.';
+        }
+        if ($newStatus === 'cancelled' && $oldStatus === 'delivered') {
+            $msg .= ' Le stock a été restauré.';
+        }
+
+        return back()->with('success', $msg);
     }
 
     /**
@@ -416,8 +507,12 @@ class DeliveryNoteController extends Controller
         $delivery->load(['company', 'client', 'items.product', 'invoice.items']);
 
         return $pdfService->download(
-            'pdf.delivery',
-            ['delivery' => $delivery, 'company' => $delivery->company],
+            'pdf.delivery-note',
+            [
+                'delivery' => $delivery,
+                'company' => $delivery->company,
+                'style' => \App\Models\DocumentStyle::forDocument($delivery->company_id, 'delivery_note'),
+            ],
             'bon-livraison-' . $delivery->delivery_number . '.pdf'
         );
     }
@@ -441,6 +536,8 @@ class DeliveryNoteController extends Controller
             return back()->withErrors(['pin' => 'Code incorrect. Veuillez réessayer.']);
         }
 
+        $wasDelivered = $delivery->status === 'delivered';
+
         $delivery->update([
             'pin_verified'    => true,
             'pin_verified_at' => now(),
@@ -448,6 +545,17 @@ class DeliveryNoteController extends Controller
             'status'          => 'delivered',
             'delivered_date'  => today(),
         ]);
+
+        // Décrémenter le stock si pas encore livré
+        if (!$wasDelivered) {
+            $user = $request->user();
+            $delivery->loadMissing('items');
+            foreach ($delivery->items as $item) {
+                if ($item->product_id) {
+                    $this->decrementStock($item->product_id, (float) $item->quantity, $user, $delivery->site_id, $delivery->delivery_number);
+                }
+            }
+        }
 
         return back()->with('success', 'PIN correct. Bon de livraison marqué comme livré.');
     }
@@ -461,13 +569,82 @@ class DeliveryNoteController extends Controller
 
         $request->validate(['signature' => ['required', 'string']]);
 
+        $wasDelivered = $delivery->status === 'delivered';
+
         $delivery->update([
             'signature' => $request->signature,
             'status'    => 'delivered',
             'delivered_date' => $delivery->delivered_date ?? now()->toDateString(),
         ]);
 
+        // Décrémenter le stock si pas encore livré
+        if (!$wasDelivered) {
+            $user = $request->user();
+            $delivery->loadMissing('items');
+            foreach ($delivery->items as $item) {
+                if ($item->product_id) {
+                    $this->decrementStock($item->product_id, (float) $item->quantity, $user, $delivery->site_id, $delivery->delivery_number);
+                }
+            }
+        }
+
         return back()->with('success', 'Signature enregistrée. Bon de livraison marqué comme livré.');
+    }
+
+    /**
+     * Décrémenter le stock d'un produit et enregistrer le mouvement
+     */
+    protected function decrementStock(int $productId, float $quantity, $user, ?int $siteId, string $reference): void
+    {
+        $product = Product::find($productId);
+        if (!$product || !$product->track_inventory) {
+            return;
+        }
+
+        $stockBefore = $product->stock_quantity;
+        $product->decrementStock($quantity);
+        $product->refresh();
+
+        StockMovement::create([
+            'company_id'   => $user->company_id,
+            'product_id'   => $product->id,
+            'site_id'      => $siteId,
+            'user_id'      => $user->id,
+            'type'         => 'sale',
+            'quantity'     => -abs((int) $quantity),
+            'stock_before' => $stockBefore,
+            'stock_after'  => $product->stock_quantity,
+            'reference'    => $reference,
+            'reason'       => 'Livraison',
+        ]);
+    }
+
+    /**
+     * Restaurer le stock d'un produit (annulation livraison)
+     */
+    protected function incrementStock(int $productId, float $quantity, $user, ?int $siteId, string $reference): void
+    {
+        $product = Product::find($productId);
+        if (!$product || !$product->track_inventory) {
+            return;
+        }
+
+        $stockBefore = $product->stock_quantity;
+        $product->incrementStock($quantity);
+        $product->refresh();
+
+        StockMovement::create([
+            'company_id'   => $user->company_id,
+            'product_id'   => $product->id,
+            'site_id'      => $siteId,
+            'user_id'      => $user->id,
+            'type'         => 'return',
+            'quantity'     => abs((int) $quantity),
+            'stock_before' => $stockBefore,
+            'stock_after'  => $product->stock_quantity,
+            'reference'    => $reference,
+            'reason'       => 'Annulation livraison',
+        ]);
     }
 
     protected function authorizeCompany(Request $request, DeliveryNote $delivery): void

@@ -146,10 +146,13 @@ class InventoryController extends Controller
                 continue; // Ligne non comptée, on passe
             }
 
-            $product    = $line->product;
-            $newStock   = $line->good_quantity; // Seuls les produits en bon état comptent dans le stock
+            $product = $line->product;
+            if (!$product) {
+                continue; // Produit supprimé, on passe
+            }
+            $newStock    = $line->good_quantity; // Seuls les produits en bon état comptent dans le stock
             $stockBefore = $product->stock_quantity;
-            $delta      = $newStock - $stockBefore;
+            $delta       = $newStock - $stockBefore;
 
             if ($delta !== 0) {
                 StockMovement::create([
@@ -177,6 +180,42 @@ class InventoryController extends Controller
         return redirect()
             ->route('inventory.sessions.show', $session)
             ->with('success', 'Inventaire clôturé. Les stocks ont été mis à jour.');
+    }
+
+    public function destroy(Request $request, Inventory $session): RedirectResponse
+    {
+        $this->authorizeInventory($request, $session);
+
+        $session->delete();
+
+        return redirect()->route('inventory.sessions.index')->with('success', 'Inventaire mis en corbeille.');
+    }
+
+    public function trash(Request $request): View
+    {
+        $sessions = Inventory::onlyTrashed()
+            ->where('company_id', $request->user()->company_id)
+            ->with(['site', 'user'])
+            ->latest('deleted_at')
+            ->paginate(15);
+
+        return view('inventory.sessions.trash', compact('sessions'));
+    }
+
+    public function restore(Request $request, int $id): RedirectResponse
+    {
+        $s = Inventory::onlyTrashed()->where('company_id', $request->user()->company_id)->findOrFail($id);
+        $s->restore();
+
+        return redirect()->route('inventory.sessions.trash')->with('success', 'Inventaire restauré.');
+    }
+
+    public function forceDelete(Request $request, int $id): RedirectResponse
+    {
+        $s = Inventory::onlyTrashed()->where('company_id', $request->user()->company_id)->findOrFail($id);
+        $s->forceDelete();
+
+        return redirect()->route('inventory.sessions.trash')->with('success', 'Inventaire supprimé définitivement.');
     }
 
     protected function authorizeInventory(Request $request, Inventory $session): void

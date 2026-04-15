@@ -224,6 +224,12 @@
                     <span>Entreprise</span>
                 </a>
             </li>
+            <li class="nav-item">
+                <a href="{{ route('settings.documents.index') }}" class="nav-link {{ request()->routeIs('settings.documents.*') ? 'active' : '' }}">
+                    <i class="fas fa-palette nav-icon"></i>
+                    <span>Style documents</span>
+                </a>
+            </li>
             @endcan
         </ul>
     </nav>

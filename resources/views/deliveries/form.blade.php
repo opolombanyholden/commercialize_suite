@@ -183,9 +183,27 @@
                 </div>
             </div>
 
+            @if(!$isEdit)
+            {{-- Livraison immédiate --}}
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-body">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="delivery_immediate" name="delivery_immediate" value="1"
+                            {{ old('delivery_immediate', 1) ? 'checked' : '' }}>
+                        <label class="form-check-label fw-semibold" for="delivery_immediate">
+                            <i class="fas fa-check-circle me-1 text-success"></i>Livraison effectuée
+                        </label>
+                    </div>
+                    <small class="text-muted d-block mt-1">
+                        Si activé, le bon sera marqué comme <strong>livré</strong> et le stock sera décrémenté automatiquement.
+                    </small>
+                </div>
+            </div>
+            @endif
+
             {{-- Submit --}}
             <div class="d-grid gap-2">
-                <button type="submit" class="btn btn-primary">
+                <button type="submit" class="btn btn-primary" onclick="return confirmSubmit()">
                     <i class="fas fa-save me-2"></i>{{ $isEdit ? 'Mettre à jour' : 'Créer le bon de livraison' }}
                 </button>
                 <a href="{{ $isEdit ? route('deliveries.show', $delivery) : route('deliveries.index') }}" class="btn btn-outline-secondary">
@@ -208,20 +226,38 @@
             <div class="modal-body">
                 <input type="text" class="form-control mb-3" id="catalogSearch" placeholder="Rechercher un produit...">
                 <div class="row g-3" id="catalogGrid">
-                    @foreach($products as $product)
-                    <div class="col-md-4 catalog-item" data-name="{{ strtolower($product->name) }}">
-                        <div class="card h-100 cursor-pointer product-card border"
+                    @forelse($products as $product)
+                    @php
+                        $outOfStock = $product->type === 'product' && $product->track_inventory && ($product->stock_quantity ?? 0) <= 0;
+                    @endphp
+                    <div class="col-md-4 catalog-item"
+                         data-name="{{ strtolower($product->name) }}"
+                         data-stock="{{ $product->stock_quantity ?? 0 }}"
+                         data-track="{{ $product->track_inventory ? '1' : '0' }}">
+                        <div class="card h-100 product-card border{{ $outOfStock ? ' opacity-50' : '' }}"
                             data-id="{{ $product->id }}"
                             data-name="{{ $product->name }}"
                             data-unit="{{ $product->unit ?? '' }}"
-                            style="cursor:pointer">
+                            style="{{ $outOfStock ? 'cursor:not-allowed;' : 'cursor:pointer;' }}">
                             <div class="card-body p-3">
                                 <p class="fw-semibold mb-1 small">{{ $product->name }}</p>
                                 <p class="text-muted mb-0" style="font-size:0.8rem;">{{ Str::limit($product->description, 50) }}</p>
+                                @if($product->track_inventory)
+                                    @if($outOfStock)
+                                        <span class="badge bg-danger mt-1"><i class="fas fa-times-circle me-1"></i>Rupture de stock</span>
+                                    @else
+                                        <small class="text-muted d-block mt-1"><i class="fas fa-warehouse me-1"></i>Stock : {{ $product->stock_quantity }}</small>
+                                    @endif
+                                @endif
                             </div>
                         </div>
                     </div>
-                    @endforeach
+                    @empty
+                    <div class="col-12 text-center py-4 text-muted">
+                        <i class="fas fa-box-open fa-2x mb-2 d-block"></i>
+                        <p class="mb-0">Aucun produit disponible dans le catalogue.</p>
+                    </div>
+                    @endforelse
                 </div>
             </div>
         </div>
@@ -304,6 +340,15 @@
 
     document.getElementById('addItemBtn').addEventListener('click', () => addItem());
 
+    // Confirmation avant soumission si livraison immédiate
+    window.confirmSubmit = function () {
+        const cb = document.getElementById('delivery_immediate');
+        if (cb && cb.checked) {
+            return confirm('La livraison sera marquée comme effectuée et le stock sera décrémenté. Confirmer ?');
+        }
+        return true;
+    };
+
     // Auto-remplissage client
     document.getElementById('client_id').addEventListener('change', function () {
         const opt = this.options[this.selectedIndex];
@@ -326,6 +371,14 @@
 
     document.querySelectorAll('.product-card').forEach(card => {
         card.addEventListener('click', function () {
+            // Bloquer les produits en rupture de stock
+            const parent = this.closest('.catalog-item');
+            const trackInv = parent.dataset.track === '1';
+            const stock = parseFloat(parent.dataset.stock) || 0;
+            if (trackInv && stock <= 0) {
+                return;
+            }
+
             addItem(this.dataset.id, this.dataset.name, this.dataset.unit, 1);
             bootstrap.Modal.getInstance(document.getElementById('catalogModal')).hide();
         });

@@ -44,6 +44,7 @@ class InvoiceRequest extends FormRequest
             // Notes
             'notes' => ['nullable', 'string', 'max:5000'],
             'terms' => ['nullable', 'string', 'max:5000'],
+            'subject' => ['nullable', 'string', 'max:500'],
 
             // Site
             'site_id' => ['nullable', 'exists:sites,id'],

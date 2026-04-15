@@ -20,6 +20,7 @@ class Quote extends Model
         'user_id',
         'client_id',
         'quote_number',
+        'subject',
         'client_name',
         'client_email',
         'client_phone',

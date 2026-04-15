@@ -12,11 +12,18 @@
         <h1 class="page-title mb-1">Devis</h1>
         <p class="text-muted mb-0">{{ $quotes->total() }} devis au total</p>
     </div>
-    @can('quotes.create')
-    <a href="{{ route('quotes.create') }}" class="btn btn-primary">
-        <i class="fas fa-plus me-2"></i>Nouveau devis
-    </a>
-    @endcan
+    <div class="d-flex gap-2">
+        @role('company_admin')
+        <a href="{{ route('quotes.trash') }}" class="btn btn-outline-danger">
+            <i class="fas fa-trash-alt me-1"></i>Corbeille
+        </a>
+        @endrole
+        @can('quotes.create')
+        <a href="{{ route('quotes.create') }}" class="btn btn-primary">
+            <i class="fas fa-plus me-2"></i>Nouveau devis
+        </a>
+        @endcan
+    </div>
 </div>
 @endsection
 
@@ -102,12 +109,12 @@
             <table class="table table-hover align-middle mb-0">
                 <thead class="table-light">
                     <tr>
-                        <th>N° Devis</th>
-                        <th>Client</th>
-                        <th>Date</th>
-                        <th>Validité</th>
-                        <th class="text-end">Montant</th>
-                        <th class="text-center">Statut</th>
+                        <x-sortable-th column="quote_number" label="N° Devis" />
+                        <x-sortable-th column="client_name" label="Client" />
+                        <x-sortable-th column="quote_date" label="Date" />
+                        <x-sortable-th column="valid_until" label="Validité" />
+                        <x-sortable-th column="total_amount" label="Montant" class="text-end" />
+                        <x-sortable-th column="status" label="Statut" class="text-center" />
                         <th style="width: 120px;">Actions</th>
                     </tr>
                 </thead>
@@ -153,9 +160,16 @@
                                     </li>
                                     <li>
                                         <a class="dropdown-item" href="{{ route('quotes.pdf', $quote) }}" target="_blank">
-                                            <i class="fas fa-file-pdf me-2 text-danger"></i>Télécharger PDF
+                                            <i class="fas fa-file-pdf me-2 text-danger"></i>PDF sans signature
                                         </a>
                                     </li>
+                                    @if($quote->company->signature_image)
+                                    <li>
+                                        <a class="dropdown-item" href="{{ route('quotes.pdf', [$quote, 'signature' => 1]) }}" target="_blank">
+                                            <i class="fas fa-signature me-2 text-primary"></i>PDF avec signature
+                                        </a>
+                                    </li>
+                                    @endif
                                     @if(!$quote->converted_to_invoice_id && $quote->status !== 'rejected')
                                         @can('quotes.convert')
                                         <li>

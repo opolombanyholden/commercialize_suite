@@ -58,7 +58,37 @@
                             <label for="client_address" class="form-label">Adresse</label>
                             <textarea class="form-control" id="client_address" name="client_address" rows="2">{{ old('client_address', $quote->client_address ?? '') }}</textarea>
                         </div>
+
+                        @if(user_has_feature('save_clients') && auth()->user()->can('clients.create'))
+                        <div class="col-12">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <small class="text-muted" id="quickClientHint">
+                                    <i class="fas fa-info-circle me-1"></i>
+                                    Si le client n'existe pas dans votre base, vous pouvez l'enregistrer en un clic.
+                                </small>
+                                <button type="button" class="btn btn-sm btn-outline-success"
+                                        id="quickSaveClientBtn"
+                                        data-url="{{ route('clients.quick-store') }}">
+                                    <i class="fas fa-user-plus me-1"></i>Enregistrer le client
+                                </button>
+                            </div>
+                        </div>
+                        @endif
                     </div>
+                </div>
+            </div>
+
+            {{-- Objet / Sujet --}}
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-body">
+                    <label for="subject" class="form-label">Objet du devis</label>
+                    <input type="text" class="form-control @error('subject') is-invalid @enderror" id="subject" name="subject"
+                           value="{{ old('subject', $quote->subject ?? '') }}"
+                           placeholder="Ex: Developpement application web - Phase 1">
+                    @error('subject')
+                        <div class="invalid-feedback">{{ $message }}</div>
+                    @enderror
+                    <div class="form-text">Optionnel. S'affiche en haut du document PDF.</div>
                 </div>
             </div>
 
@@ -452,6 +482,84 @@ document.addEventListener('DOMContentLoaded', function() {
                 document.getElementById('client_phone').value = option.dataset.phone || '';
                 document.getElementById('client_address').value = option.dataset.address || '';
             }
+        });
+    }
+
+    // Quick-save client
+    const quickSaveBtn = document.getElementById('quickSaveClientBtn');
+    if (quickSaveBtn) {
+        quickSaveBtn.addEventListener('click', function () {
+            const nameInput = document.getElementById('client_name');
+            const name = nameInput.value.trim();
+            if (!name) {
+                nameInput.classList.add('is-invalid');
+                nameInput.focus();
+                return;
+            }
+            nameInput.classList.remove('is-invalid');
+
+            const payload = {
+                name:    name,
+                email:   document.getElementById('client_email').value.trim() || null,
+                phone:   document.getElementById('client_phone').value.trim() || null,
+                address: document.getElementById('client_address').value.trim() || null,
+            };
+
+            const originalHtml = quickSaveBtn.innerHTML;
+            quickSaveBtn.disabled = true;
+            quickSaveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Enregistrement...';
+
+            fetch(quickSaveBtn.dataset.url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content
+                                  || document.querySelector('input[name="_token"]').value,
+                },
+                body: JSON.stringify(payload),
+            })
+            .then(async (res) => {
+                const json = await res.json();
+                if (!res.ok) throw new Error(json.message || 'Erreur lors de l\'enregistrement.');
+                return json;
+            })
+            .then((data) => {
+                const c = data.client;
+                if (clientSelect) {
+                    let opt = clientSelect.querySelector('option[value="' + c.id + '"]');
+                    if (!opt) {
+                        opt = document.createElement('option');
+                        opt.value = c.id;
+                        clientSelect.appendChild(opt);
+                    }
+                    opt.textContent = c.name;
+                    opt.dataset.name = c.name;
+                    opt.dataset.email = c.email || '';
+                    opt.dataset.phone = c.phone || '';
+                    opt.dataset.address = c.full_address || '';
+                    clientSelect.value = c.id;
+                }
+
+                quickSaveBtn.classList.remove('btn-outline-success');
+                quickSaveBtn.classList.add('btn-success');
+                quickSaveBtn.innerHTML = '<i class="fas fa-check me-1"></i>' + (data.duplicate ? 'Déjà existant' : 'Enregistré');
+                const hint = document.getElementById('quickClientHint');
+                if (hint) {
+                    hint.innerHTML = '<i class="fas fa-check-circle text-success me-1"></i>' + data.message;
+                }
+                setTimeout(() => {
+                    quickSaveBtn.disabled = false;
+                    quickSaveBtn.classList.remove('btn-success');
+                    quickSaveBtn.classList.add('btn-outline-success');
+                    quickSaveBtn.innerHTML = originalHtml;
+                }, 2500);
+            })
+            .catch((err) => {
+                quickSaveBtn.disabled = false;
+                quickSaveBtn.innerHTML = originalHtml;
+                alert(err.message || 'Erreur lors de l\'enregistrement du client.');
+            });
         });
     }
     @endif

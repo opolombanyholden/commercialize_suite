@@ -24,11 +24,17 @@ class RoleController extends Controller
      */
     public function index(): View
     {
-        $roles = Role::withCount('permissions', 'users')
+        $roles = Role::with('permissions:id,name')
+            ->withCount('permissions', 'users')
             ->whereNotIn('name', ['super_admin'])
             ->get();
 
-        return view('admin.roles.index', compact('roles'));
+        $allPermissions = Permission::orderBy('name')->get(['id', 'name'])
+            ->groupBy(function ($permission) {
+                return explode('.', $permission->name)[0];
+            });
+
+        return view('admin.roles.index', compact('roles', 'allPermissions'));
     }
 
     /**
@@ -84,7 +90,7 @@ class RoleController extends Controller
         }
 
         return redirect()
-            ->route('admin.roles.show', $role)
+            ->route('admin.roles.index')
             ->with('success', 'Rôle créé avec succès.');
     }
 
@@ -133,7 +139,7 @@ class RoleController extends Controller
         }
 
         return redirect()
-            ->route('admin.roles.show', $role)
+            ->route('admin.roles.index')
             ->with('success', 'Rôle mis à jour avec succès.');
     }
 

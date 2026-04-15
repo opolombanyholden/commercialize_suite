@@ -130,6 +130,7 @@ class InvoiceController extends Controller
             'due_date' => $data['due_date'] ?? null,
             'notes' => $data['notes'] ?? null,
             'terms' => $data['terms'] ?? null,
+            'subject' => $data['subject'] ?? null,
             'status' => 'draft',
             'payment_status' => 'unpaid',
         ]);
@@ -250,6 +251,7 @@ class InvoiceController extends Controller
             'due_date' => $data['due_date'] ?? null,
             'notes' => $data['notes'] ?? null,
             'terms' => $data['terms'] ?? null,
+            'subject' => $data['subject'] ?? null,
         ]);
 
         // Supprimer et recréer items/taxes
@@ -325,7 +327,7 @@ class InvoiceController extends Controller
     /**
      * Générer le PDF
      */
-    public function pdf(Invoice $invoice)
+    public function pdf(Request $request, Invoice $invoice)
     {
         $this->authorize('view', $invoice);
 
@@ -333,7 +335,12 @@ class InvoiceController extends Controller
 
         return $this->pdfService->download(
             'pdf.invoice',
-            ['invoice' => $invoice, 'company' => $invoice->company],
+            [
+                'invoice' => $invoice,
+                'company' => $invoice->company,
+                'style' => \App\Models\DocumentStyle::forDocument($invoice->company_id, 'invoice'),
+                'withSignature' => $request->boolean('signature'),
+            ],
             'facture-' . $invoice->invoice_number . '.pdf'
         );
     }

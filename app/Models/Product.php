@@ -159,6 +159,21 @@ class Product extends Model
             ->whereColumn('stock_quantity', '<=', 'stock_alert_threshold');
     }
 
+    /**
+     * Produits disponibles à la vente : services + produits sans suivi stock + produits en stock
+     */
+    public function scopeAvailableForSale($query)
+    {
+        return $query->where(function ($q) {
+            $q->where('track_inventory', false)
+              ->orWhere('type', 'service')
+              ->orWhere(function ($q2) {
+                  $q2->where('track_inventory', true)
+                     ->where('stock_quantity', '>', 0);
+              });
+        });
+    }
+
     public function scopeSearch($query, string $search)
     {
         return $query->where(function ($q) use ($search) {

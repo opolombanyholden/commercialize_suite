@@ -21,6 +21,7 @@ class StoreInvoiceRequest extends FormRequest
             'due_date' => ['nullable', 'date', 'after_or_equal:invoice_date'],
             'notes' => ['nullable', 'string'],
             'terms' => ['nullable', 'string'],
+            'subject' => ['nullable', 'string', 'max:500'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.product_id' => ['nullable', 'exists:products,id'],
             'items.*.description' => ['required', 'string', 'max:500'],
@@ -36,6 +37,7 @@ class StoreInvoiceRequest extends FormRequest
             'payment_method'     => ['nullable', 'string', 'in:cash,check,bank_transfer,credit_card,mobile_money,other'],
             'payment_reference'  => ['nullable', 'string', 'max:100'],
             'delivery_immediate' => ['nullable', 'boolean'],
+            'generate_delivery_pin' => ['nullable', 'boolean'],
         ];
     }
 

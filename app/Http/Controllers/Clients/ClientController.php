@@ -18,9 +18,65 @@ class ClientController extends Controller
     public function __construct()
     {
         $this->middleware('permission:clients.view')->only(['index', 'show']);
-        $this->middleware('permission:clients.create')->only(['create', 'store']);
+        $this->middleware('permission:clients.create')->only(['create', 'store', 'quickStore']);
         $this->middleware('permission:clients.edit')->only(['edit', 'update']);
         $this->middleware('permission:clients.delete')->only('destroy');
+    }
+
+    /**
+     * Création rapide d'un client depuis un formulaire facture/devis (AJAX).
+     * Retourne le client en JSON pour qu'il puisse être ajouté au <select>.
+     */
+    public function quickStore(Request $request)
+    {
+        $data = $request->validate([
+            'name'    => ['required', 'string', 'max:255'],
+            'email'   => ['nullable', 'email', 'max:255'],
+            'phone'   => ['nullable', 'string', 'max:50'],
+            'address' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $companyId = $request->user()->company_id;
+
+        // Anti-doublon : si un client avec exactement le même nom existe déjà,
+        // on le renvoie au lieu d'en créer un nouveau.
+        $existing = Client::where('company_id', $companyId)
+            ->where('name', $data['name'])
+            ->first();
+
+        if ($existing) {
+            return response()->json([
+                'client'    => $this->formatClientForJson($existing),
+                'duplicate' => true,
+                'message'   => 'Un client avec ce nom existe déjà — il a été sélectionné.',
+            ]);
+        }
+
+        $client = Client::create([
+            'company_id' => $companyId,
+            'type'       => 'individual',
+            'name'       => $data['name'],
+            'email'      => $data['email'] ?? null,
+            'phone'      => $data['phone'] ?? null,
+            'address'    => $data['address'] ?? null,
+            'is_active'  => true,
+        ]);
+
+        return response()->json([
+            'client'  => $this->formatClientForJson($client),
+            'message' => 'Client enregistré avec succès.',
+        ], 201);
+    }
+
+    protected function formatClientForJson(Client $client): array
+    {
+        return [
+            'id'           => $client->id,
+            'name'         => $client->display_name,
+            'email'        => $client->email,
+            'phone'        => $client->phone,
+            'full_address' => $client->full_address,
+        ];
     }
 
     /**

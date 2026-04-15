@@ -414,9 +414,16 @@
             </div>
             <div class="card-body">
                 <div class="d-grid gap-2">
-                    <a href="{{ route('invoices.pdf', $invoice) }}" class="btn btn-primary" target="_blank">
-                        <i class="fas fa-file-pdf me-2"></i>Télécharger PDF
-                    </a>
+                    <div class="btn-group w-100" role="group">
+                        <a href="{{ route('invoices.pdf', $invoice) }}" class="btn btn-primary" target="_blank">
+                            <i class="fas fa-file-pdf me-2"></i>PDF
+                        </a>
+                        @if($invoice->company->signature_image)
+                        <a href="{{ route('invoices.pdf', [$invoice, 'signature' => 1]) }}" class="btn btn-outline-primary" target="_blank" title="PDF avec signature numérisée">
+                            <i class="fas fa-signature"></i>
+                        </a>
+                        @endif
+                    </div>
                     
                     @if($invoice->client_email)
                     <button type="button" class="btn btn-outline-primary" onclick="sendByEmail()">
@@ -462,11 +469,11 @@
                 <p class="text-muted small mb-2">
                     Statut actuel : <span class="badge bg-{{ $invoice->status_color }}">{{ $invoice->status_label }}</span>
                 </p>
-                <form action="{{ route('invoices.updateStatus', $invoice) }}" method="POST">
+                <form action="{{ route('invoices.updateStatus', $invoice) }}" method="POST" id="statusForm">
                     @csrf
                     @method('PATCH')
                     <div class="mb-2">
-                        <select name="status" class="form-select form-select-sm">
+                        <select name="status" id="statusSelect" class="form-select form-select-sm">
                             <option value="draft"     {{ $invoice->status === 'draft'                      ? 'selected' : '' }}>📝 Brouillon</option>
                             <option value="sent"      {{ $invoice->status === 'sent'                       ? 'selected' : '' }}>📤 Envoyée</option>
                             <option value="paid"      {{ $invoice->payment_status === 'paid'               ? 'selected' : '' }}>✅ Payée</option>
@@ -474,6 +481,30 @@
                             <option value="cancelled" {{ $invoice->status === 'cancelled'                  ? 'selected' : '' }}>❌ Annulée</option>
                         </select>
                     </div>
+
+                    {{-- Champs de paiement (visibles uniquement pour paid/partial) --}}
+                    <div id="paymentFields" style="display: none;">
+                        <div class="mb-2">
+                            <label class="form-label small mb-1">Mode de paiement</label>
+                            <select name="payment_method" class="form-select form-select-sm">
+                                <option value="cash">💵 Espèces</option>
+                                <option value="bank_transfer">🏦 Virement</option>
+                                <option value="check">📝 Chèque</option>
+                                <option value="mobile_money">📱 Mobile Money</option>
+                                <option value="credit_card">💳 Carte bancaire</option>
+                                <option value="other">🔄 Autre</option>
+                            </select>
+                        </div>
+                        <div id="partialAmountField" class="mb-2" style="display: none;">
+                            <label class="form-label small mb-1">Montant reçu <span class="text-danger">*</span></label>
+                            <div class="input-group input-group-sm">
+                                <input type="number" name="payment_amount" class="form-control" min="1" max="{{ $invoice->balance }}" step="1" placeholder="Montant...">
+                                <span class="input-group-text">FCFA</span>
+                            </div>
+                            <div class="form-text small">Solde restant : {{ number_format($invoice->balance, 0, ',', ' ') }} FCFA</div>
+                        </div>
+                    </div>
+
                     <button type="submit" class="btn btn-outline-primary btn-sm w-100">
                         <i class="fas fa-sync-alt me-1"></i>Mettre à jour le statut
                     </button>
@@ -547,3 +578,26 @@
     </div>
 </div>
 @endsection
+
+@push('scripts')
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const statusSelect = document.getElementById('statusSelect');
+    const paymentFields = document.getElementById('paymentFields');
+    const partialAmountField = document.getElementById('partialAmountField');
+
+    if (statusSelect) {
+        statusSelect.addEventListener('change', function () {
+            const val = this.value;
+            const isPayment = (val === 'paid' || val === 'partial');
+
+            paymentFields.style.display = isPayment ? 'block' : 'none';
+            partialAmountField.style.display = (val === 'partial') ? 'block' : 'none';
+        });
+
+        // Déclencher au chargement si déjà sur paid/partial
+        statusSelect.dispatchEvent(new Event('change'));
+    }
+});
+</script>
+@endpush

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Payments;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Payment\StorePaymentRequest;
+use App\Models\DocumentStyle;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Services\PdfService;
@@ -159,7 +160,7 @@ class PaymentController extends Controller
     }
 
     /**
-     * Supprimer un paiement
+     * Mettre en corbeille un paiement
      */
     public function destroy(Request $request, Payment $payment): RedirectResponse
     {
@@ -170,7 +171,43 @@ class PaymentController extends Controller
 
         return redirect()
             ->route('invoices.show', $invoice)
-            ->with('success', 'Paiement supprimé.');
+            ->with('success', 'Paiement mis en corbeille.');
+    }
+
+    /**
+     * Corbeille des paiements
+     */
+    public function trash(Request $request): View
+    {
+        $payments = Payment::onlyTrashed()
+            ->where('company_id', $request->user()->company_id)
+            ->with(['invoice', 'user'])
+            ->latest('deleted_at')
+            ->paginate(15);
+
+        return view('payments.trash', compact('payments'));
+    }
+
+    /**
+     * Restaurer un paiement
+     */
+    public function restore(Request $request, int $id): RedirectResponse
+    {
+        $payment = Payment::onlyTrashed()->where('company_id', $request->user()->company_id)->findOrFail($id);
+        $payment->restore();
+
+        return redirect()->route('payments.trash')->with('success', 'Paiement restauré.');
+    }
+
+    /**
+     * Supprimer définitivement un paiement
+     */
+    public function forceDelete(Request $request, int $id): RedirectResponse
+    {
+        $payment = Payment::onlyTrashed()->where('company_id', $request->user()->company_id)->findOrFail($id);
+        $payment->forceDelete();
+
+        return redirect()->route('payments.trash')->with('success', 'Paiement supprimé définitivement.');
     }
 
     /**
@@ -184,7 +221,11 @@ class PaymentController extends Controller
 
         return $pdfService->download(
             'pdf.payment-receipt',
-            ['payment' => $payment, 'company' => $payment->company],
+            [
+                'payment' => $payment,
+                'company' => $payment->company,
+                'style'   => DocumentStyle::forDocument($payment->company_id, 'payment_receipt'),
+            ],
             'recu-' . $payment->payment_number . '.pdf'
         );
     }

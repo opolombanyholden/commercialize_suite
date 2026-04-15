@@ -11,11 +11,18 @@
         <h1 class="page-title mb-1">Mouvements de stock</h1>
         <p class="text-muted mb-0">Historique des entrées et sorties</p>
     </div>
-    @can('products.edit')
-    <a href="{{ route('inventory.movements.create') }}" class="btn btn-primary">
-        <i class="fas fa-plus me-2"></i>Nouveau mouvement
-    </a>
-    @endcan
+    <div class="d-flex gap-2">
+        @role('company_admin')
+        <a href="{{ route('inventory.movements.trash') }}" class="btn btn-outline-danger">
+            <i class="fas fa-trash-alt me-1"></i>Corbeille
+        </a>
+        @endrole
+        @can('products.edit')
+        <a href="{{ route('inventory.movements.create') }}" class="btn btn-primary">
+            <i class="fas fa-plus me-2"></i>Nouveau mouvement
+        </a>
+        @endcan
+    </div>
 </div>
 @endsection
 
@@ -87,6 +94,9 @@
                         <th>Entrepôt</th>
                         <th>Référence</th>
                         <th>Opérateur</th>
+                        @role('company_admin')
+                        <th class="text-end" style="width:80px;"></th>
+                        @endrole
                     </tr>
                 </thead>
                 <tbody>
@@ -94,11 +104,15 @@
                     <tr>
                         <td class="text-muted small">{{ $movement->created_at->format('d/m/Y H:i') }}</td>
                         <td>
-                            <a href="{{ route('products.show', $movement->product) }}" class="text-decoration-none fw-semibold">
-                                {{ $movement->product->name }}
-                            </a>
-                            @if($movement->product->sku)
-                                <div class="text-muted small">{{ $movement->product->sku }}</div>
+                            @if($movement->product)
+                                <a href="{{ route('products.show', $movement->product) }}" class="text-decoration-none fw-semibold">
+                                    {{ $movement->product->name }}
+                                </a>
+                                @if($movement->product->sku)
+                                    <div class="text-muted small">{{ $movement->product->sku }}</div>
+                                @endif
+                            @else
+                                <span class="text-muted fst-italic">Produit supprimé</span>
                             @endif
                         </td>
                         <td>
@@ -115,6 +129,17 @@
                         <td class="text-muted small">{{ $movement->site->name ?? '—' }}</td>
                         <td class="text-muted small">{{ $movement->reference ?? '—' }}</td>
                         <td class="text-muted small">{{ $movement->user->name ?? '—' }}</td>
+                        @role('company_admin')
+                        <td class="text-end">
+                            <form action="{{ route('inventory.movements.destroy', $movement) }}" method="POST"
+                                  onsubmit="return confirm('Supprimer ce mouvement ?')">
+                                @csrf @method('DELETE')
+                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Supprimer">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </form>
+                        </td>
+                        @endrole
                     </tr>
                     @endforeach
                 </tbody>

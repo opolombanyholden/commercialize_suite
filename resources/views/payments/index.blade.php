@@ -12,11 +12,18 @@
         <h1 class="page-title mb-1">Paiements</h1>
         <p class="text-muted mb-0">{{ $payments->total() }} paiement(s) enregistré(s)</p>
     </div>
-    @can('payments.create')
-    <a href="{{ route('payments.create') }}" class="btn btn-primary">
-        <i class="fas fa-plus me-2"></i>Nouveau paiement
-    </a>
-    @endcan
+    <div class="d-flex gap-2">
+        @role('company_admin')
+        <a href="{{ route('payments.trash') }}" class="btn btn-outline-danger">
+            <i class="fas fa-trash-alt me-1"></i>Corbeille
+        </a>
+        @endrole
+        @can('payments.create')
+        <a href="{{ route('payments.create') }}" class="btn btn-primary">
+            <i class="fas fa-plus me-2"></i>Nouveau paiement
+        </a>
+        @endcan
+    </div>
 </div>
 @endsection
 

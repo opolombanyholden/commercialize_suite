@@ -152,7 +152,7 @@ class RolePermissionSeeder extends Seeder
                     'companies.view', 'companies.edit',
                     'sites.*',
                     'users.*',
-                    'roles.view', 'roles.assign',
+                    'roles.*',
                     'products.*',
                     'categories.*',
                     'clients.*',

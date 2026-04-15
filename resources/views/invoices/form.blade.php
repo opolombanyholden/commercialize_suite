@@ -72,7 +72,38 @@
                                 <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
                         </div>
+
+                        @if(user_has_feature('save_clients') && auth()->user()->can('clients.create'))
+                        {{-- Bouton enregistrer client --}}
+                        <div class="col-12">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <small class="text-muted" id="quickClientHint">
+                                    <i class="fas fa-info-circle me-1"></i>
+                                    Si le client n'existe pas dans votre base, vous pouvez l'enregistrer en un clic.
+                                </small>
+                                <button type="button" class="btn btn-sm btn-outline-success"
+                                        id="quickSaveClientBtn"
+                                        data-url="{{ route('clients.quick-store') }}">
+                                    <i class="fas fa-user-plus me-1"></i>Enregistrer le client
+                                </button>
+                            </div>
+                        </div>
+                        @endif
                     </div>
+                </div>
+            </div>
+
+            {{-- Objet / Sujet --}}
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-body">
+                    <label for="subject" class="form-label">Objet de la facture</label>
+                    <input type="text" class="form-control @error('subject') is-invalid @enderror" id="subject" name="subject"
+                           value="{{ old('subject', $invoice->subject ?? '') }}"
+                           placeholder="Ex: Prestation de services informatiques - Mars 2026">
+                    @error('subject')
+                        <div class="invalid-feedback">{{ $message }}</div>
+                    @enderror
+                    <div class="form-text">Optionnel. S'affiche en haut du document PDF.</div>
                 </div>
             </div>
 
@@ -338,6 +369,23 @@
                         </div>
                     </div>
                     <small class="text-muted">Un bon de livraison sera créé automatiquement.</small>
+
+                    <hr class="my-2">
+
+                    {{-- Code secret de livraison --}}
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <label class="fw-semibold mb-0" for="generate_delivery_pin">
+                            <i class="fas fa-key me-1 text-warning"></i>Code secret de livraison
+                        </label>
+                        <div class="form-check form-switch mb-0">
+                            <input class="form-check-input" type="checkbox" id="generate_delivery_pin"
+                                   name="generate_delivery_pin" value="1"
+                                   {{ old('generate_delivery_pin') ? 'checked' : '' }}>
+                        </div>
+                    </div>
+                    <small class="text-muted">
+                        Un code à 8 caractères sera généré et imprimé sur la facture. Le client devra le communiquer au livreur pour valider la livraison.
+                    </small>
                 </div>
             </div>
             @endunless
@@ -547,6 +595,86 @@ document.addEventListener('DOMContentLoaded', function() {
                 document.getElementById('client_phone').value = option.dataset.phone || '';
                 document.getElementById('client_address').value = option.dataset.address || '';
             }
+        });
+    }
+
+    // Quick-save client : enregistre les infos saisies manuellement comme nouveau client
+    const quickSaveBtn = document.getElementById('quickSaveClientBtn');
+    if (quickSaveBtn) {
+        quickSaveBtn.addEventListener('click', function () {
+            const nameInput = document.getElementById('client_name');
+            const name = nameInput.value.trim();
+            if (!name) {
+                nameInput.classList.add('is-invalid');
+                nameInput.focus();
+                return;
+            }
+            nameInput.classList.remove('is-invalid');
+
+            const payload = {
+                name:    name,
+                email:   document.getElementById('client_email').value.trim() || null,
+                phone:   document.getElementById('client_phone').value.trim() || null,
+                address: document.getElementById('client_address').value.trim() || null,
+            };
+
+            const originalHtml = quickSaveBtn.innerHTML;
+            quickSaveBtn.disabled = true;
+            quickSaveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Enregistrement...';
+
+            fetch(quickSaveBtn.dataset.url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content
+                                  || document.querySelector('input[name="_token"]').value,
+                },
+                body: JSON.stringify(payload),
+            })
+            .then(async (res) => {
+                const json = await res.json();
+                if (!res.ok) throw new Error(json.message || 'Erreur lors de l\'enregistrement.');
+                return json;
+            })
+            .then((data) => {
+                const c = data.client;
+                // Ajouter (ou remplacer) l'option dans le select
+                if (clientSelect) {
+                    let opt = clientSelect.querySelector('option[value="' + c.id + '"]');
+                    if (!opt) {
+                        opt = document.createElement('option');
+                        opt.value = c.id;
+                        clientSelect.appendChild(opt);
+                    }
+                    opt.textContent = c.name;
+                    opt.dataset.name = c.name;
+                    opt.dataset.email = c.email || '';
+                    opt.dataset.phone = c.phone || '';
+                    opt.dataset.address = c.full_address || '';
+                    clientSelect.value = c.id;
+                }
+
+                // Feedback visuel
+                quickSaveBtn.classList.remove('btn-outline-success');
+                quickSaveBtn.classList.add('btn-success');
+                quickSaveBtn.innerHTML = '<i class="fas fa-check me-1"></i>' + (data.duplicate ? 'Déjà existant' : 'Enregistré');
+                const hint = document.getElementById('quickClientHint');
+                if (hint) {
+                    hint.innerHTML = '<i class="fas fa-check-circle text-success me-1"></i>' + data.message;
+                }
+                setTimeout(() => {
+                    quickSaveBtn.disabled = false;
+                    quickSaveBtn.classList.remove('btn-success');
+                    quickSaveBtn.classList.add('btn-outline-success');
+                    quickSaveBtn.innerHTML = originalHtml;
+                }, 2500);
+            })
+            .catch((err) => {
+                quickSaveBtn.disabled = false;
+                quickSaveBtn.innerHTML = originalHtml;
+                alert(err.message || 'Erreur lors de l\'enregistrement du client.');
+            });
         });
     }
     @endif

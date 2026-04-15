@@ -339,19 +339,46 @@ class DeliveryReturnController extends Controller
     }
 
     /**
-     * Supprimer un retour (uniquement si pending)
+     * Mettre en corbeille un retour
      */
     public function destroy(Request $request, DeliveryReturn $return): RedirectResponse
     {
         $this->authorizeCompany($request, $return);
 
-        if (!$return->isPending()) {
+        if (!$request->user()->hasRole('company_admin') && !$return->isPending()) {
             return back()->with('error', 'Seuls les retours en attente peuvent être supprimés.');
         }
 
         $return->delete();
 
-        return redirect()->route('returns.index')->with('success', 'Retour supprimé.');
+        return redirect()->route('returns.index')->with('success', 'Retour mis en corbeille.');
+    }
+
+    public function trash(Request $request): View
+    {
+        $returns = DeliveryReturn::onlyTrashed()
+            ->where('company_id', $request->user()->company_id)
+            ->with(['invoice', 'deliveryNote'])
+            ->latest('deleted_at')
+            ->paginate(15);
+
+        return view('returns.trash', compact('returns'));
+    }
+
+    public function restore(Request $request, int $id): RedirectResponse
+    {
+        $return = DeliveryReturn::onlyTrashed()->where('company_id', $request->user()->company_id)->findOrFail($id);
+        $return->restore();
+
+        return redirect()->route('returns.trash')->with('success', 'Retour restauré.');
+    }
+
+    public function forceDelete(Request $request, int $id): RedirectResponse
+    {
+        $return = DeliveryReturn::onlyTrashed()->where('company_id', $request->user()->company_id)->findOrFail($id);
+        $return->forceDelete();
+
+        return redirect()->route('returns.trash')->with('success', 'Retour supprimé définitivement.');
     }
 
     protected function authorizeCompany(Request $request, DeliveryReturn $return): void

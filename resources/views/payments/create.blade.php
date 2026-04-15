@@ -120,8 +120,11 @@
                                 <option value="mobile_money" {{ old('payment_method') == 'mobile_money' ? 'selected' : '' }}>
                                     📱 Mobile Money (Airtel/Moov)
                                 </option>
-                                <option value="card" {{ old('payment_method') == 'card' ? 'selected' : '' }}>
+                                <option value="credit_card" {{ old('payment_method') == 'credit_card' ? 'selected' : '' }}>
                                     💳 Carte bancaire
+                                </option>
+                                <option value="other" {{ old('payment_method') == 'other' ? 'selected' : '' }}>
+                                    🔄 Autre
                                 </option>
                             </select>
                             @error('payment_method')

@@ -21,7 +21,8 @@ class StoreQuoteRequest extends FormRequest
             'valid_until' => ['nullable', 'date', 'after_or_equal:quote_date'],
             'notes' => ['nullable', 'string'],
             'terms' => ['nullable', 'string'],
-            
+            'subject' => ['nullable', 'string', 'max:500'],
+
             // Items
             'items' => ['required', 'array', 'min:1'],
             'items.*.product_id' => ['nullable', 'exists:products,id'],

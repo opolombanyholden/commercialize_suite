@@ -69,7 +69,13 @@ class QuoteController extends Controller
             $query->whereDate('quote_date', '<=', $to);
         }
 
-        $quotes = $query->latest('quote_date')->paginate(15)->withQueryString();
+        // Tri dynamique (par défaut : numéro de devis décroissant)
+        $sortable = ['quote_number', 'client_name', 'quote_date', 'valid_until', 'total_amount', 'status'];
+        $sort = in_array($request->input('sort'), $sortable) ? $request->input('sort') : 'quote_number';
+        $direction = $request->input('direction') === 'asc' ? 'asc' : 'desc';
+        $query->orderBy($sort, $direction);
+
+        $quotes = $query->paginate(15)->withQueryString();
 
         // Statistiques (scope identique au filtrage ci-dessus)
         $statsQuery = Quote::where('company_id', $companyId);
@@ -163,6 +169,7 @@ class QuoteController extends Controller
                 'promo_code'     => $promoModel ? $promoModel->code : null,
                 'notes'          => $request->notes,
                 'terms'          => $request->terms,
+                'subject'        => $request->subject,
             ];
 
             // Infos client
@@ -335,6 +342,7 @@ class QuoteController extends Controller
                 'promo_code'     => $promoModel ? $promoModel->code : null,
                 'notes'          => $request->notes,
                 'terms'          => $request->terms,
+                'subject'        => $request->subject,
                 'status'         => $newStatus,
             ];
 
@@ -423,13 +431,14 @@ class QuoteController extends Controller
     }
 
     /**
-     * Supprimer un devis
+     * Mettre en corbeille un devis
      */
     public function destroy(Request $request, Quote $quote): RedirectResponse
     {
         $this->authorizeCompany($request, $quote);
 
-        if (!$quote->canBeDeleted()) {
+        // Super admin peut tout mettre en corbeille
+        if (!$request->user()->hasRole('company_admin') && !$quote->canBeDeleted()) {
             return back()->with('error', 'Ce devis ne peut pas être supprimé.');
         }
 
@@ -437,7 +446,45 @@ class QuoteController extends Controller
 
         return redirect()
             ->route('quotes.index')
-            ->with('success', 'Devis supprimé avec succès.');
+            ->with('success', 'Devis mis en corbeille.');
+    }
+
+    /**
+     * Corbeille des devis
+     */
+    public function trash(Request $request): View
+    {
+        $companyId = $request->user()->company_id;
+
+        $quotes = Quote::onlyTrashed()
+            ->where('company_id', $companyId)
+            ->with(['client', 'user'])
+            ->latest('deleted_at')
+            ->paginate(15);
+
+        return view('quotes.trash', compact('quotes'));
+    }
+
+    /**
+     * Restaurer un devis
+     */
+    public function restore(Request $request, int $id): RedirectResponse
+    {
+        $quote = Quote::onlyTrashed()->where('company_id', $request->user()->company_id)->findOrFail($id);
+        $quote->restore();
+
+        return redirect()->route('quotes.trash')->with('success', 'Devis restauré avec succès.');
+    }
+
+    /**
+     * Supprimer définitivement un devis
+     */
+    public function forceDelete(Request $request, int $id): RedirectResponse
+    {
+        $quote = Quote::onlyTrashed()->where('company_id', $request->user()->company_id)->findOrFail($id);
+        $quote->forceDelete();
+
+        return redirect()->route('quotes.trash')->with('success', 'Devis supprimé définitivement.');
     }
 
     /**
@@ -451,7 +498,11 @@ class QuoteController extends Controller
 
         return $pdfService->download(
             'pdf.quote',
-            ['quote' => $quote, 'company' => $quote->company],
+            [
+                'quote' => $quote,
+                'company' => $quote->company,
+                'style' => \App\Models\DocumentStyle::forDocument($quote->company_id, 'quote'),
+            ],
             'devis-' . $quote->quote_number . '.pdf'
         );
     }

@@ -124,8 +124,8 @@
             {{ old('terms') ? 'checked' : '' }}
         >
         <label class="form-check-label" for="terms">
-            J'accepte les <a href="{{ route('terms') }}" target="_blank">conditions d'utilisation</a> 
-            et la <a href="{{ route('privacy') }}" target="_blank">politique de confidentialité</a>
+            J'accepte les <a href="#" target="_blank">conditions d'utilisation</a>
+            et la <a href="#" target="_blank">politique de confidentialité</a>
         </label>
         @error('terms')
             <div class="invalid-feedback">{{ $message }}</div>

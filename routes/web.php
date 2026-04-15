@@ -4,6 +4,7 @@ use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\PasswordController;
 use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\Admin\CompanyController;
+use App\Http\Controllers\Admin\DocumentStyleController;
 use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\SiteController;
 use App\Http\Controllers\Admin\PromotionController;
@@ -126,6 +127,17 @@ Route::middleware(['auth'])->group(function () {
     Route::get('settings/company', [CompanyController::class, 'settings'])->name('settings.company');
     Route::put('settings/company', [CompanyController::class, 'updateSettings'])->name('settings.company.update');
 
+    // Personnalisation des documents PDF
+    Route::prefix('settings/documents')->name('settings.documents.')->group(function () {
+        Route::get('/', [DocumentStyleController::class, 'index'])->name('index');
+        Route::put('/{documentType}', [DocumentStyleController::class, 'update'])
+            ->name('update')->where('documentType', 'quote|invoice|delivery_note');
+        Route::get('/{documentType}/preview', [DocumentStyleController::class, 'preview'])
+            ->name('preview')->where('documentType', 'quote|invoice|delivery_note');
+        Route::delete('/{documentType}/reset', [DocumentStyleController::class, 'reset'])
+            ->name('reset')->where('documentType', 'quote|invoice|delivery_note');
+    });
+
     // ----------------------------------------
     // PRODUITS & CATÉGORIES
     // ----------------------------------------
@@ -153,6 +165,7 @@ Route::middleware(['auth'])->group(function () {
     // CLIENTS
     // ----------------------------------------
     Route::resource('clients', ClientController::class);
+    Route::post('clients-quick', [ClientController::class, 'quickStore'])->name('clients.quick-store');
     Route::post('clients/{client}/toggle-status', [ClientController::class, 'toggleStatus'])
         ->name('clients.toggle-status');
     Route::get('clients-export', [ClientController::class, 'export'])->name('clients.export');
@@ -163,6 +176,9 @@ Route::middleware(['auth'])->group(function () {
     // ----------------------------------------
     // DEVIS
     // ----------------------------------------
+    Route::get('quotes/trash', [QuoteController::class, 'trash'])->name('quotes.trash');
+    Route::post('quotes/{id}/restore', [QuoteController::class, 'restore'])->name('quotes.restore');
+    Route::delete('quotes/{id}/force-delete', [QuoteController::class, 'forceDelete'])->name('quotes.forceDelete');
     Route::resource('quotes', QuoteController::class);
     Route::get('quotes/{quote}/pdf', [QuoteController::class, 'pdf'])->name('quotes.pdf');
     Route::post('quotes/{quote}/send', [QuoteController::class, 'send'])->name('quotes.send');
@@ -175,6 +191,9 @@ Route::middleware(['auth'])->group(function () {
     // ----------------------------------------
     // FACTURES
     // ----------------------------------------
+    Route::get('invoices/trash', [InvoiceController::class, 'trash'])->name('invoices.trash');
+    Route::post('invoices/{id}/restore', [InvoiceController::class, 'restore'])->name('invoices.restore');
+    Route::delete('invoices/{id}/force-delete', [InvoiceController::class, 'forceDelete'])->name('invoices.forceDelete');
     Route::resource('invoices', InvoiceController::class);
     Route::get('invoices/{invoice}/pdf', [InvoiceController::class, 'pdf'])->name('invoices.pdf');
     Route::post('invoices/{invoice}/send', [InvoiceController::class, 'send'])->name('invoices.send');
@@ -186,6 +205,9 @@ Route::middleware(['auth'])->group(function () {
     // ----------------------------------------
     // BONS DE LIVRAISON
     // ----------------------------------------
+    Route::get('deliveries/trash', [DeliveryNoteController::class, 'trash'])->name('deliveries.trash');
+    Route::post('deliveries/{id}/restore', [DeliveryNoteController::class, 'restore'])->name('deliveries.restore');
+    Route::delete('deliveries/{id}/force-delete', [DeliveryNoteController::class, 'forceDelete'])->name('deliveries.forceDelete');
     Route::resource('deliveries', DeliveryNoteController::class);
     Route::get('deliveries/{delivery}/pdf', [DeliveryNoteController::class, 'pdf'])->name('deliveries.pdf');
     Route::patch('deliveries/{delivery}/status', [DeliveryNoteController::class, 'updateStatus'])->name('deliveries.updateStatus');
@@ -196,6 +218,9 @@ Route::middleware(['auth'])->group(function () {
     // ----------------------------------------
     // RETOURS CLIENTS
     // ----------------------------------------
+    Route::get('returns/trash', [DeliveryReturnController::class, 'trash'])->name('returns.trash');
+    Route::post('returns/{id}/restore', [DeliveryReturnController::class, 'restore'])->name('returns.restore');
+    Route::delete('returns/{id}/force-delete', [DeliveryReturnController::class, 'forceDelete'])->name('returns.forceDelete');
     Route::resource('returns', DeliveryReturnController::class)->except(['edit', 'update']);
     Route::patch('returns/{return}/receive', [DeliveryReturnController::class, 'markReceived'])->name('returns.receive');
     Route::post('returns/{return}/resolve',  [DeliveryReturnController::class, 'resolve'])->name('returns.resolve');
@@ -203,6 +228,9 @@ Route::middleware(['auth'])->group(function () {
     // ----------------------------------------
     // PAIEMENTS
     // ----------------------------------------
+    Route::get('payments/trash', [PaymentController::class, 'trash'])->name('payments.trash');
+    Route::post('payments/{id}/restore', [PaymentController::class, 'restore'])->name('payments.restore');
+    Route::delete('payments/{id}/force-delete', [PaymentController::class, 'forceDelete'])->name('payments.forceDelete');
     Route::resource('payments', PaymentController::class)->only(['index', 'create', 'store', 'show', 'destroy']);
     Route::get('payments/{payment}/receipt', [PaymentController::class, 'receipt'])->name('payments.receipt');
 
@@ -233,23 +261,31 @@ Route::middleware(['auth'])->group(function () {
         Route::resource('warehouses', WarehouseController::class);
 
         // Mouvements de stock
+        Route::get('movements/trash', [StockMovementController::class, 'trash'])->name('movements.trash');
+        Route::post('movements/{id}/restore', [StockMovementController::class, 'restore'])->name('movements.restore');
+        Route::delete('movements/{id}/force-delete', [StockMovementController::class, 'forceDelete'])->name('movements.forceDelete');
         Route::get('movements', [StockMovementController::class, 'index'])->name('movements.index');
         Route::get('movements/create', [StockMovementController::class, 'create'])->name('movements.create');
         Route::post('movements', [StockMovementController::class, 'store'])->name('movements.store');
         Route::get('movements/{movement}', [StockMovementController::class, 'show'])->name('movements.show');
+        Route::delete('movements/{movement}', [StockMovementController::class, 'destroy'])->name('movements.destroy');
 
         // Sessions d'inventaire
+        Route::get('sessions/trash', [InventoryController::class, 'trash'])->name('sessions.trash');
+        Route::post('sessions/{id}/restore', [InventoryController::class, 'restore'])->name('sessions.restore');
+        Route::delete('sessions/{id}/force-delete', [InventoryController::class, 'forceDelete'])->name('sessions.forceDelete');
         Route::get('sessions', [InventoryController::class, 'index'])->name('sessions.index');
         Route::get('sessions/create', [InventoryController::class, 'create'])->name('sessions.create');
         Route::post('sessions', [InventoryController::class, 'store'])->name('sessions.store');
         Route::get('sessions/{session}', [InventoryController::class, 'show'])->name('sessions.show');
         Route::patch('sessions/{session}/lines/{line}', [InventoryController::class, 'updateLine'])->name('sessions.line');
         Route::post('sessions/{session}/complete', [InventoryController::class, 'complete'])->name('sessions.complete');
+        Route::delete('sessions/{session}', [InventoryController::class, 'destroy'])->name('sessions.destroy');
     });
 
     // Rapports avancés (version Pro+)
     Route::middleware(['feature:reports_advanced'])->prefix('reports')->name('reports.')->group(function () {
-        Route::get('/', fn () => view('coming-soon', ['feature' => 'Rapports avancés']))->name('index');
+        Route::get('/', [\App\Http\Controllers\Reports\ReportController::class, 'index'])->name('index');
     });
 
     // ----------------------------------------

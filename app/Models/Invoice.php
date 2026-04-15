@@ -24,6 +24,7 @@ class Invoice extends Model
         'type',
         'original_invoice_id',
         'invoice_number',
+        'subject',
         'client_name',
         'client_email',
         'client_phone',

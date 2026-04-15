@@ -11,11 +11,18 @@
         <h1 class="page-title mb-1">Sessions d'inventaire</h1>
         <p class="text-muted mb-0">Comptage physique des stocks</p>
     </div>
-    @can('products.edit')
-    <a href="{{ route('inventory.sessions.create') }}" class="btn btn-primary">
-        <i class="fas fa-plus me-2"></i>Nouvel inventaire
-    </a>
-    @endcan
+    <div class="d-flex gap-2">
+        @role('company_admin')
+        <a href="{{ route('inventory.sessions.trash') }}" class="btn btn-outline-danger">
+            <i class="fas fa-trash-alt me-1"></i>Corbeille
+        </a>
+        @endrole
+        @can('products.edit')
+        <a href="{{ route('inventory.sessions.create') }}" class="btn btn-primary">
+            <i class="fas fa-plus me-2"></i>Nouvel inventaire
+        </a>
+        @endcan
+    </div>
 </div>
 @endsection
 
@@ -53,9 +60,17 @@
                         <td class="text-muted small">{{ $inv->user->name ?? '—' }}</td>
                         <td class="text-end">
                             <a href="{{ route('inventory.sessions.show', $inv) }}" class="btn btn-sm btn-outline-primary">
-                                <i class="fas fa-{{ $inv->status === 'completed' ? 'eye' : 'clipboard-list' }}"></i>
-                                {{ $inv->status === 'completed' ? 'Voir' : 'Saisir' }}
+                                <i class="fas fa-{{ $inv->status === 'completed' ? 'eye' : 'clipboard-list' }} me-1"></i>{{ $inv->status === 'completed' ? 'Voir' : 'Saisir' }}
                             </a>
+                            @role('company_admin')
+                            <form action="{{ route('inventory.sessions.destroy', $inv) }}" method="POST" class="d-inline"
+                                  onsubmit="return confirm('Mettre cet inventaire en corbeille ?')">
+                                @csrf @method('DELETE')
+                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Supprimer">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </form>
+                            @endrole
                         </td>
                     </tr>
                     @endforeach
